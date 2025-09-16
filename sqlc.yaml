@@ -1,0 +1,16 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    # CRITICAL: We point to the migrations folder for the schema.
+    # sqlc will read all the *.up.sql files to build the schema.
+    schema: "./sql/migrations"
+    # This is where we will write our application's SQL queries.
+    queries: "./sql/queries"
+    gen:
+      go:
+        # The generated Go code will be in a package named 'db'.
+        package: "db"
+        # The output directory for the generated code.
+        out: "./internal/db"
+        # We specify pgx/v5 as our database driver package.
+        sql_package: "pgx/v5"

@@ -1,16 +1,12 @@
 # This file defines the multi-container Docker application.
-# It orchestrates the database, an automatic migration runner,
-# a manual migration toolkit, and the Go backend service.
+# It uses a .env file to manage secrets and configuration.
 version: '3.8'
 
-# This is a YAML anchor. It defines a reusable block of configuration
-# that we can use for all our migration services to keep the file DRY (Don't Repeat Yourself).
+# Defines a reusable base configuration for all migration services to keep the file DRY.
 x-migrate-base: &migrate-base
   image: migrate/migrate
-  # We mount your local migration files into the container so the tool can see them.
   volumes:
     - ./sql/migrations:/migrations
-  # All migration commands depend on the postgres service being ready.
   depends_on:
     - postgres
 
@@ -19,10 +15,11 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: file_vault_db
+    # Environment variables are loaded from the .env file for security.
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: file_vault
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
@@ -30,35 +27,30 @@ services:
     restart: unless-stopped
 
   # --- AUTOMATIC MIGRATION SERVICE ---
-  # This container starts up, applies any new migrations, and then exits.
-  # This is the one the 'backend' service depends on.
+  # This container runs on 'docker-compose up' to apply all new migrations before the app starts.
   migrate:
-    # This is a YAML alias. It inherits all the properties from the x-migrate-base block.
     <<: *migrate-base
     container_name: file_vault_migrate_auto
-    # The command to apply all pending 'up' migrations.
-    command: ["-path", "/migrations", "-database", "postgres://user:password@postgres:5432/file_vault?sslmode=disable", "up"]
-    # If migrations fail, the container will stop. It won't restart automatically.
+    command: ["-path", "/migrations", "-database", "${DATABASE_URL}", "up"]
     restart: on-failure
 
   # --- MANUAL MIGRATION TOOLKIT ---
-  # These services are for manual use from the command line. They will NOT run automatically
-  # when you run 'docker-compose up'.
+  # These services are for manual control over migrations using 'docker-compose run'.
 
+  # Rolls back ALL migrations. Use with: docker-compose run --rm migrate-down-all
   migrate-down-all:
     <<: *migrate-base
-    # The command to roll back ALL migrations.
-    command: ["-path", "/migrations", "-database", "postgres://user:password@postgres:5432/file_vault?sslmode=disable", "down", "-all"]
+    command: ["-path", "/migrations", "-database", "${DATABASE_URL}", "down", "-all"]
 
+  # Applies the NEXT single 'up' migration. Use with: docker-compose run --rm migrate-up-one
   migrate-up-one:
     <<: *migrate-base
-    # The command to apply the NEXT single 'up' migration.
-    command: ["-path", "/migrations", "-database", "postgres://user:password@postgres:5432/file_vault?sslmode=disable", "up", "1"]
+    command: ["-path", "/migrations", "-database", "${DATABASE_URL}", "up", "1"]
 
+  # Rolls back the LAST applied migration. Use with: docker-compose run --rm migrate-down-one
   migrate-down-one:
     <<: *migrate-base
-    # The command to roll back the LAST single applied migration.
-    command: ["-path", "/migrations", "-database", "postgres://user:password@postgres:5432/file_vault?sslmode=disable", "down", "1"]
+    command: ["-path", "/migrations", "-database", "${DATABASE_URL}", "down", "1"]
 
   # The Go Backend Application Service
   backend:
@@ -66,14 +58,15 @@ services:
     container_name: file_vault_backend
     ports:
       - "8080:8080"
+    # The Go app also gets its database URL from the .env file.
     environment:
-      DATABASE_URL: "postgres://user:password@postgres:5432/file_vault?sslmode=disable"
-    # CRITICAL: Ensures the backend only starts AFTER the automatic 'migrate' service has successfully run.
+      DATABASE_URL: ${DATABASE_URL}
+    # Ensures the backend only starts AFTER the database is fully migrated.
     depends_on:
       - migrate
     restart: unless-stopped
 
-# Defines the named volume for persistent database storage.
+# Named volume for persistent database storage.
 volumes:
   postgres_data:
 
