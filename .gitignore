@@ -32,6 +32,3 @@ go.work.sum
 # Editor/IDE
 .idea/
 .vscode/
-
-file-vault
-server
