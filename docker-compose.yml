@@ -1,6 +1,21 @@
+# This file defines the multi-container Docker application.
+# It orchestrates the database, an automatic migration runner,
+# a manual migration toolkit, and the Go backend service.
 version: '3.8'
 
+# This is a YAML anchor. It defines a reusable block of configuration
+# that we can use for all our migration services to keep the file DRY (Don't Repeat Yourself).
+x-migrate-base: &migrate-base
+  image: migrate/migrate
+  # We mount your local migration files into the container so the tool can see them.
+  volumes:
+    - ./sql/migrations:/migrations
+  # All migration commands depend on the postgres service being ready.
+  depends_on:
+    - postgres
+
 services:
+  # The PostgreSQL Database Service
   postgres:
     image: postgres:15-alpine
     container_name: file_vault_db
@@ -14,5 +29,51 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
+  # --- AUTOMATIC MIGRATION SERVICE ---
+  # This container starts up, applies any new migrations, and then exits.
+  # This is the one the 'backend' service depends on.
+  migrate:
+    # This is a YAML alias. It inherits all the properties from the x-migrate-base block.
+    <<: *migrate-base
+    container_name: file_vault_migrate_auto
+    # The command to apply all pending 'up' migrations.
+    command: ["-path", "/migrations", "-database", "postgres://user:password@postgres:5432/file_vault?sslmode=disable", "up"]
+    # If migrations fail, the container will stop. It won't restart automatically.
+    restart: on-failure
+
+  # --- MANUAL MIGRATION TOOLKIT ---
+  # These services are for manual use from the command line. They will NOT run automatically
+  # when you run 'docker-compose up'.
+
+  migrate-down-all:
+    <<: *migrate-base
+    # The command to roll back ALL migrations.
+    command: ["-path", "/migrations", "-database", "postgres://user:password@postgres:5432/file_vault?sslmode=disable", "down", "-all"]
+
+  migrate-up-one:
+    <<: *migrate-base
+    # The command to apply the NEXT single 'up' migration.
+    command: ["-path", "/migrations", "-database", "postgres://user:password@postgres:5432/file_vault?sslmode=disable", "up", "1"]
+
+  migrate-down-one:
+    <<: *migrate-base
+    # The command to roll back the LAST single applied migration.
+    command: ["-path", "/migrations", "-database", "postgres://user:password@postgres:5432/file_vault?sslmode=disable", "down", "1"]
+
+  # The Go Backend Application Service
+  backend:
+    build: .
+    container_name: file_vault_backend
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: "postgres://user:password@postgres:5432/file_vault?sslmode=disable"
+    # CRITICAL: Ensures the backend only starts AFTER the automatic 'migrate' service has successfully run.
+    depends_on:
+      - migrate
+    restart: unless-stopped
+
+# Defines the named volume for persistent database storage.
 volumes:
   postgres_data:
+
