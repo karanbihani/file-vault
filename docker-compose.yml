@@ -1,56 +1,27 @@
-# This file defines the multi-container Docker application.
-# It uses a .env file to manage secrets and configuration.
+# This is the final, simplified baseline configuration for development.
+# It includes a persistent volume for the database and a shared volume for uploads.
 version: '3.8'
-
-# Defines a reusable base configuration for all migration services to keep the file DRY.
-x-migrate-base: &migrate-base
-  image: migrate/migrate
-  volumes:
-    - ./sql/migrations:/migrations
-  depends_on:
-    - postgres
 
 services:
   # The PostgreSQL Database Service
   postgres:
     image: postgres:15-alpine
     container_name: file_vault_db
-    # Environment variables are loaded from the .env file for security.
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
+    # This named volume ensures your database data persists even after you run 'docker-compose down'.
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
-
-  # --- AUTOMATIC MIGRATION SERVICE ---
-  # This container runs on 'docker-compose up' to apply all new migrations before the app starts.
-  migrate:
-    <<: *migrate-base
-    container_name: file_vault_migrate_auto
-    command: ["-path", "/migrations", "-database", "${DATABASE_URL}", "up"]
-    restart: on-failure
-
-  # --- MANUAL MIGRATION TOOLKIT ---
-  # These services are for manual control over migrations using 'docker-compose run'.
-
-  # Rolls back ALL migrations. Use with: docker-compose run --rm migrate-down-all
-  migrate-down-all:
-    <<: *migrate-base
-    command: ["-path", "/migrations", "-database", "${DATABASE_URL}", "down", "-all"]
-
-  # Applies the NEXT single 'up' migration. Use with: docker-compose run --rm migrate-up-one
-  migrate-up-one:
-    <<: *migrate-base
-    command: ["-path", "/migrations", "-database", "${DATABASE_URL}", "up", "1"]
-
-  # Rolls back the LAST applied migration. Use with: docker-compose run --rm migrate-down-one
-  migrate-down-one:
-    <<: *migrate-base
-    command: ["-path", "/migrations", "-database", "${DATABASE_URL}", "down", "1"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # The Go Backend Application Service
   backend:
@@ -58,15 +29,18 @@ services:
     container_name: file_vault_backend
     ports:
       - "8080:8080"
-    # The Go app also gets its database URL from the .env file.
     environment:
       DATABASE_URL: ${DATABASE_URL}
-    # Ensures the backend only starts AFTER the database is fully migrated.
+    # This is the "shared folder" link.
+    volumes:
+      # It links your local './uploads' folder to the '/root/uploads' folder inside the container.
+      - ./uploads:/root/uploads
+    # The backend now waits for the postgres service to pass its health check before starting.
     depends_on:
-      - migrate
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
-# Named volume for persistent database storage.
+# Defines the named volume for persistent database storage.
 volumes:
   postgres_data:
-

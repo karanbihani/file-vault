@@ -58,6 +58,8 @@ CREATE TABLE user_files (
     physical_file_id BIGINT NOT NULL REFERENCES physical_files(id) ON DELETE RESTRICT,
     filename VARCHAR(255) NOT NULL,
     mime_type VARCHAR(255) NOT NULL,
+    description TEXT, -- ADDED: For user-provided descriptions.
+    tags TEXT[],      -- ADDED: A PostgreSQL array to hold multiple tags.
     upload_date TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

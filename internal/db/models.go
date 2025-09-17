@@ -69,6 +69,8 @@ type UserFile struct {
 	PhysicalFileID int64
 	Filename       string
 	MimeType       string
+	Description    pgtype.Text
+	Tags           []string
 	UploadDate     pgtype.Timestamptz
 }
 

@@ -2,52 +2,36 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"net/http"
 	"os"
 
-	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/karanbihani/file-vault/internal/api" // IMPORTANT: Adjust this import path
+	"github.com/karanbihani/file-vault/internal/core/files"
 )
 
 func main() {
-	// --- Database Connection ---
-	// We read the database connection string from an environment variable.
-	// This is a best practice for security and flexibility.
+	// ... (database connection and service initialization are the same)
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL environment variable is not set")
 	}
 
-	// pgxpool is a high-performance connection pool for PostgreSQL.
 	dbpool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
-		// Use log.Fatalf to exit the application if the DB connection fails.
-		// The application cannot run without the database.
 		log.Fatalf("Unable to connect to database: %v\n", err)
 	}
-	// defer dbpool.Close() ensures that the connection pool is closed when main() exits.
 	defer dbpool.Close()
+	log.Println("Successfully connected to the database!")
 
-	fmt.Println("Successfully connected to the database!")
+	fileService := files.NewService(dbpool, "./uploads")
+	log.Println("File service initialized.")
 
 	// --- Gin Web Server Setup ---
-	router := gin.Default()
+	// UPDATED: We now pass the fileService into our router setup function.
+	router := api.SetupRouter(dbpool, fileService)
 
-	// A simple health check endpoint to verify that the server is running.
-	router.GET("/health", func(c *gin.Context) {
-		// We can also add a database ping here to check DB health.
-		err := dbpool.Ping(context.Background())
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "DOWN", "error": "database connection error"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "UP"})
-	})
-
-	fmt.Println("Starting server on port 8080...")
-	// router.Run() starts the HTTP server and listens for incoming requests.
+	log.Println("Starting server on port 8080...")
 	if err := router.Run(":8080"); err != nil {
 		log.Fatalf("Failed to run server: %v", err)
 	}
