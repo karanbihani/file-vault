@@ -12,14 +12,7 @@ import (
 )
 
 const createPhysicalFile = `-- name: CreatePhysicalFile :one
-INSERT INTO physical_files (
-  sha256_hash,
-  size_bytes,
-  storage_path
-) VALUES (
-  $1, $2, $3
-)
-RETURNING id, sha256_hash, size_bytes, storage_path, reference_count, created_at
+INSERT INTO physical_files (sha256_hash, size_bytes, storage_path) VALUES ($1, $2, $3) RETURNING id, sha256_hash, size_bytes, storage_path, reference_count, created_at
 `
 
 type CreatePhysicalFileParams struct {
@@ -28,8 +21,6 @@ type CreatePhysicalFileParams struct {
 	StoragePath string
 }
 
-// Inserts a new physical_file record into the database when a new unique file is uploaded.
-// It returns the newly created record.
 func (q *Queries) CreatePhysicalFile(ctx context.Context, arg CreatePhysicalFileParams) (PhysicalFile, error) {
 	row := q.db.QueryRow(ctx, createPhysicalFile, arg.Sha256Hash, arg.SizeBytes, arg.StoragePath)
 	var i PhysicalFile
@@ -45,17 +36,7 @@ func (q *Queries) CreatePhysicalFile(ctx context.Context, arg CreatePhysicalFile
 }
 
 const createUserFile = `-- name: CreateUserFile :one
-INSERT INTO user_files (
-  owner_id,
-  physical_file_id,
-  filename,
-  mime_type,
-  description,
-  tags
-) VALUES (
-  $1, $2, $3, $4, $5, $6
-)
-RETURNING id, owner_id, physical_file_id, filename, mime_type, description, tags, upload_date
+INSERT INTO user_files (owner_id, physical_file_id, filename, mime_type, description, tags) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, owner_id, physical_file_id, filename, mime_type, description, tags, upload_date
 `
 
 type CreateUserFileParams struct {
@@ -67,8 +48,6 @@ type CreateUserFileParams struct {
 	Tags           []string
 }
 
-// Inserts a new user_file record, linking a user to a physical file.
-// UPDATED: Now includes description and tags.
 func (q *Queries) CreateUserFile(ctx context.Context, arg CreateUserFileParams) (UserFile, error) {
 	row := q.db.QueryRow(ctx, createUserFile,
 		arg.OwnerID,
@@ -92,12 +71,72 @@ func (q *Queries) CreateUserFile(ctx context.Context, arg CreateUserFileParams) 
 	return i, err
 }
 
-const getPhysicalFileByHash = `-- name: GetPhysicalFileByHash :one
-SELECT id, sha256_hash, size_bytes, storage_path, reference_count, created_at FROM physical_files
-WHERE sha256_hash = $1 LIMIT 1
+const decrementPhysicalFileRefCount = `-- name: DecrementPhysicalFileRefCount :one
+UPDATE physical_files SET reference_count = reference_count - 1 WHERE id = $1 RETURNING reference_count
 `
 
-// Retrieves a single physical_file record by its SHA-26 hash to check for duplicates.
+func (q *Queries) DecrementPhysicalFileRefCount(ctx context.Context, id int64) (int32, error) {
+	row := q.db.QueryRow(ctx, decrementPhysicalFileRefCount, id)
+	var reference_count int32
+	err := row.Scan(&reference_count)
+	return reference_count, err
+}
+
+const deletePhysicalFile = `-- name: DeletePhysicalFile :exec
+DELETE FROM physical_files WHERE id = $1
+`
+
+func (q *Queries) DeletePhysicalFile(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deletePhysicalFile, id)
+	return err
+}
+
+const deleteUserFile = `-- name: DeleteUserFile :exec
+DELETE FROM user_files WHERE id = $1
+`
+
+func (q *Queries) DeleteUserFile(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteUserFile, id)
+	return err
+}
+
+const getFileOwnerAndPhysicalFile = `-- name: GetFileOwnerAndPhysicalFile :one
+SELECT uf.owner_id, pf.id as physical_file_id, pf.size_bytes, pf.storage_path
+FROM user_files uf
+JOIN physical_files pf ON uf.physical_file_id = pf.id
+WHERE uf.id = $1 AND uf.owner_id = $2
+`
+
+type GetFileOwnerAndPhysicalFileParams struct {
+	ID      int64
+	OwnerID int64
+}
+
+type GetFileOwnerAndPhysicalFileRow struct {
+	OwnerID        int64
+	PhysicalFileID int64
+	SizeBytes      int64
+	StoragePath    string
+}
+
+// CORRECTED: Added pf.storage_path to the SELECT and uf.owner_id to the WHERE clause.
+func (q *Queries) GetFileOwnerAndPhysicalFile(ctx context.Context, arg GetFileOwnerAndPhysicalFileParams) (GetFileOwnerAndPhysicalFileRow, error) {
+	row := q.db.QueryRow(ctx, getFileOwnerAndPhysicalFile, arg.ID, arg.OwnerID)
+	var i GetFileOwnerAndPhysicalFileRow
+	err := row.Scan(
+		&i.OwnerID,
+		&i.PhysicalFileID,
+		&i.SizeBytes,
+		&i.StoragePath,
+	)
+	return i, err
+}
+
+const getPhysicalFileByHash = `-- name: GetPhysicalFileByHash :one
+SELECT id, sha256_hash, size_bytes, storage_path, reference_count, created_at FROM physical_files WHERE sha256_hash = $1 LIMIT 1
+`
+
+// ... (all queries up to GetFileOwnerAndPhysicalFile are the same) ...
 func (q *Queries) GetPhysicalFileByHash(ctx context.Context, sha256Hash string) (PhysicalFile, error) {
 	row := q.db.QueryRow(ctx, getPhysicalFileByHash, sha256Hash)
 	var i PhysicalFile
@@ -112,15 +151,48 @@ func (q *Queries) GetPhysicalFileByHash(ctx context.Context, sha256Hash string) 
 	return i, err
 }
 
-const incrementPhysicalFileRefCount = `-- name: IncrementPhysicalFileRefCount :one
-UPDATE physical_files
-SET reference_count = reference_count + 1
-WHERE id = $1
-RETURNING id, sha256_hash, size_bytes, storage_path, reference_count, created_at
+const getUserFileForDownload = `-- name: GetUserFileForDownload :one
+SELECT uf.id, uf.owner_id, uf.physical_file_id, uf.filename, uf.mime_type, uf.description, uf.tags, uf.upload_date, pf.storage_path FROM user_files uf JOIN physical_files pf ON uf.physical_file_id = pf.id WHERE uf.id = $1 AND uf.owner_id = $2
 `
 
-// Increments the reference_count for a physical_file when a duplicate is uploaded.
-// It returns the updated record.
+type GetUserFileForDownloadParams struct {
+	ID      int64
+	OwnerID int64
+}
+
+type GetUserFileForDownloadRow struct {
+	ID             int64
+	OwnerID        int64
+	PhysicalFileID int64
+	Filename       string
+	MimeType       string
+	Description    pgtype.Text
+	Tags           []string
+	UploadDate     pgtype.Timestamptz
+	StoragePath    string
+}
+
+func (q *Queries) GetUserFileForDownload(ctx context.Context, arg GetUserFileForDownloadParams) (GetUserFileForDownloadRow, error) {
+	row := q.db.QueryRow(ctx, getUserFileForDownload, arg.ID, arg.OwnerID)
+	var i GetUserFileForDownloadRow
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.PhysicalFileID,
+		&i.Filename,
+		&i.MimeType,
+		&i.Description,
+		&i.Tags,
+		&i.UploadDate,
+		&i.StoragePath,
+	)
+	return i, err
+}
+
+const incrementPhysicalFileRefCount = `-- name: IncrementPhysicalFileRefCount :one
+UPDATE physical_files SET reference_count = reference_count + 1 WHERE id = $1 RETURNING id, sha256_hash, size_bytes, storage_path, reference_count, created_at
+`
+
 func (q *Queries) IncrementPhysicalFileRefCount(ctx context.Context, id int64) (PhysicalFile, error) {
 	row := q.db.QueryRow(ctx, incrementPhysicalFileRefCount, id)
 	var i PhysicalFile
@@ -133,4 +205,37 @@ func (q *Queries) IncrementPhysicalFileRefCount(ctx context.Context, id int64) (
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listUserFiles = `-- name: ListUserFiles :many
+SELECT id, owner_id, physical_file_id, filename, mime_type, description, tags, upload_date FROM user_files WHERE owner_id = $1 ORDER BY upload_date DESC
+`
+
+func (q *Queries) ListUserFiles(ctx context.Context, ownerID int64) ([]UserFile, error) {
+	rows, err := q.db.Query(ctx, listUserFiles, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UserFile
+	for rows.Next() {
+		var i UserFile
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.PhysicalFileID,
+			&i.Filename,
+			&i.MimeType,
+			&i.Description,
+			&i.Tags,
+			&i.UploadDate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

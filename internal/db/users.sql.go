@@ -10,13 +10,7 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (
-  email,
-  password_hash
-) VALUES (
-  $1, $2
-)
-RETURNING id, email, password_hash, storage_quota_bytes, storage_used_bytes, created_at
+INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, password_hash, storage_quota_bytes, storage_used_bytes, created_at
 `
 
 type CreateUserParams struct {
@@ -24,7 +18,6 @@ type CreateUserParams struct {
 	PasswordHash string
 }
 
-// This query inserts a new user into the database and returns the newly created user row.
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash)
 	var i User
@@ -40,11 +33,9 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, storage_quota_bytes, storage_used_bytes, created_at FROM users
-WHERE email = $1 LIMIT 1
+SELECT id, email, password_hash, storage_quota_bytes, storage_used_bytes, created_at FROM users WHERE email = $1 LIMIT 1
 `
 
-// This query retrieves a single user from the database by their email address.
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i User
@@ -60,11 +51,9 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, storage_quota_bytes, storage_used_bytes, created_at FROM users
-WHERE id = $1 LIMIT 1
+SELECT id, email, password_hash, storage_quota_bytes, storage_used_bytes, created_at FROM users WHERE id = $1 LIMIT 1
 `
 
-// This query retrieves a single user from the database by their ID.
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
 	var i User
@@ -77,4 +66,21 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const updateUserStorageUsage = `-- name: UpdateUserStorageUsage :exec
+UPDATE users
+SET storage_used_bytes = storage_used_bytes + $1
+WHERE id = $2
+`
+
+type UpdateUserStorageUsageParams struct {
+	Amount int64
+	ID     int64
+}
+
+// CORRECTED: We now name the arguments using sqlc.arg() for clarity.
+func (q *Queries) UpdateUserStorageUsage(ctx context.Context, arg UpdateUserStorageUsageParams) error {
+	_, err := q.db.Exec(ctx, updateUserStorageUsage, arg.Amount, arg.ID)
+	return err
 }
