@@ -159,29 +159,41 @@ type DownloadFileResponse struct {
 	Size     int64
 }
 
-func (s *Service) DownloadFile(ctx context.Context, fileID, ownerID int64) (*DownloadFileResponse, error) {
-	fileMeta, err := s.queries.GetUserFileForDownload(ctx, db.GetUserFileForDownloadParams{ID: fileID, OwnerID: ownerID})
+// ListFilesSharedWithMe retrieves all files that have been shared with a given user.
+func (s *Service) ListFilesSharedWithMe(ctx context.Context, userID int64) ([]db.UserFile, error) {
+	return s.queries.ListFilesSharedWithUser(ctx, userID)
+}
+
+func (s *Service) DownloadFile(ctx context.Context, fileID, userID int64) (*DownloadFileResponse, error) {
+	// 1. Use our new, powerful query to authorize and get file metadata in a single step.
+	// This query will only succeed if the user is the owner OR the file is shared with them.
+	// CORRECTED: Using the new, explicitly named parameters.
+	fileMeta, err := s.queries.GetFileForUserDownload(ctx, db.GetFileForUserDownloadParams{
+		FileID:           fileID,
+		RequestingUserID: userID,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("file not found or access denied: %w", err)
+		if err == pgx.ErrNoRows {
+			// If no rows are found, it means the user has no access.
+			return nil, fmt.Errorf("file not found or access denied")
+		}
+		// Handle other potential database errors.
+		return nil, fmt.Errorf("failed to get file metadata: %w", err)
 	}
 
-	// CORRECTED: 'object' is now of type *minio.Object, so we can call .Stat()
+	// 2. If the query succeeded, we are authorized. Get the file object from MinIO.
 	object, err := s.storage.Get(ctx, fileMeta.StoragePath)
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve file from storage: %w", err)
 	}
 
-	stat, err := object.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("could not get file stats from storage: %w", err)
-	}
-
 	return &DownloadFileResponse{
 		Data:     object,
 		Filename: fileMeta.Filename,
-		Size:     stat.Size,
+		Size:     fileMeta.SizeBytes,
 	}, nil
 }
+
 
 func (s *Service) DeleteFile(ctx context.Context, fileID, ownerID int64) error {
 	// CORRECTED: Using the new, more secure query that requires both fileID and ownerID.

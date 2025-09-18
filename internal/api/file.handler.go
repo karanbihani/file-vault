@@ -127,3 +127,20 @@ func (h *FilesHandler) Delete(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "file deleted successfully"})
 }
+
+// ListSharedWithMe is the handler for the GET /files/shared-with-me endpoint.
+func (h *FilesHandler) ListSharedWithMe(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user ID not found in context"})
+		return
+	}
+
+	files, err := h.fileService.ListFilesSharedWithMe(c.Request.Context(), userID.(int64))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, files)
+}

@@ -100,6 +100,44 @@ func (q *Queries) DeleteUserFile(ctx context.Context, id int64) error {
 	return err
 }
 
+const getFileForUserDownload = `-- name: GetFileForUserDownload :one
+SELECT
+    uf.filename,
+    pf.storage_path,
+    pf.size_bytes
+FROM user_files uf
+JOIN physical_files pf ON uf.physical_file_id = pf.id
+WHERE
+    uf.id = $1
+    AND (
+        uf.owner_id = $2
+        OR
+        EXISTS (
+            SELECT 1 FROM file_shares_to_users fstu
+            WHERE fstu.user_file_id = uf.id AND fstu.shared_with_user_id = $2
+        )
+    )
+`
+
+type GetFileForUserDownloadParams struct {
+	FileID           int64
+	RequestingUserID int64
+}
+
+type GetFileForUserDownloadRow struct {
+	Filename    string
+	StoragePath string
+	SizeBytes   int64
+}
+
+// CORRECTED: Uses sqlc.arg() for explicit parameter naming.
+func (q *Queries) GetFileForUserDownload(ctx context.Context, arg GetFileForUserDownloadParams) (GetFileForUserDownloadRow, error) {
+	row := q.db.QueryRow(ctx, getFileForUserDownload, arg.FileID, arg.RequestingUserID)
+	var i GetFileForUserDownloadRow
+	err := row.Scan(&i.Filename, &i.StoragePath, &i.SizeBytes)
+	return i, err
+}
+
 const getFileOwnerAndPhysicalFile = `-- name: GetFileOwnerAndPhysicalFile :one
 SELECT uf.owner_id, pf.id as physical_file_id, pf.size_bytes, pf.storage_path
 FROM user_files uf
@@ -205,6 +243,64 @@ func (q *Queries) IncrementPhysicalFileRefCount(ctx context.Context, id int64) (
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const isFileSharedWithUser = `-- name: IsFileSharedWithUser :one
+SELECT EXISTS(
+  SELECT 1 FROM file_shares_to_users
+  WHERE user_file_id = $1 AND shared_with_user_id = $2
+)
+`
+
+type IsFileSharedWithUserParams struct {
+	UserFileID       int64
+	SharedWithUserID int64
+}
+
+// Checks if a specific file has been shared with a specific user. Returns true or false.
+func (q *Queries) IsFileSharedWithUser(ctx context.Context, arg IsFileSharedWithUserParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isFileSharedWithUser, arg.UserFileID, arg.SharedWithUserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const listFilesSharedWithUser = `-- name: ListFilesSharedWithUser :many
+SELECT uf.id, uf.owner_id, uf.physical_file_id, uf.filename, uf.mime_type, uf.description, uf.tags, uf.upload_date
+FROM user_files uf
+JOIN file_shares_to_users fstu ON uf.id = fstu.user_file_id
+WHERE fstu.shared_with_user_id = $1
+ORDER BY uf.upload_date DESC
+`
+
+// Retrieves a list of all files that have been explicitly shared with a specific user.
+func (q *Queries) ListFilesSharedWithUser(ctx context.Context, sharedWithUserID int64) ([]UserFile, error) {
+	rows, err := q.db.Query(ctx, listFilesSharedWithUser, sharedWithUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UserFile
+	for rows.Next() {
+		var i UserFile
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.PhysicalFileID,
+			&i.Filename,
+			&i.MimeType,
+			&i.Description,
+			&i.Tags,
+			&i.UploadDate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listUserFiles = `-- name: ListUserFiles :many

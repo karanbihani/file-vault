@@ -34,6 +34,17 @@ func (q *Queries) CreatePublicShareLink(ctx context.Context, arg CreatePublicSha
 	return i, err
 }
 
+const deletePublicShareLinksByFileID = `-- name: DeletePublicShareLinksByFileID :exec
+DELETE FROM shares
+WHERE user_file_id = $1
+`
+
+// Removes ALL public share links associated with a specific file.
+func (q *Queries) DeletePublicShareLinksByFileID(ctx context.Context, userFileID int64) error {
+	_, err := q.db.Exec(ctx, deletePublicShareLinksByFileID, userFileID)
+	return err
+}
+
 const getShareByToken = `-- name: GetShareByToken :one
 SELECT s.id, s.download_count, uf.filename, pf.storage_path, pf.size_bytes
 FROM shares s
@@ -70,5 +81,61 @@ UPDATE shares SET download_count = download_count + 1 WHERE id = $1
 
 func (q *Queries) IncrementShareDownloadCount(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, incrementShareDownloadCount, id)
+	return err
+}
+
+const isFileAlreadySharedWithUser = `-- name: IsFileAlreadySharedWithUser :one
+SELECT EXISTS(
+  SELECT 1 FROM file_shares_to_users
+  WHERE user_file_id = $1 AND shared_with_user_id = $2
+)
+`
+
+type IsFileAlreadySharedWithUserParams struct {
+	UserFileID       int64
+	SharedWithUserID int64
+}
+
+// Checks if a share record already exists to prevent duplicates.
+func (q *Queries) IsFileAlreadySharedWithUser(ctx context.Context, arg IsFileAlreadySharedWithUserParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isFileAlreadySharedWithUser, arg.UserFileID, arg.SharedWithUserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const shareFileWithUser = `-- name: ShareFileWithUser :exec
+INSERT INTO file_shares_to_users (
+  user_file_id,
+  shared_with_user_id
+) VALUES (
+  $1, $2
+)
+`
+
+type ShareFileWithUserParams struct {
+	UserFileID       int64
+	SharedWithUserID int64
+}
+
+// Creates a record in the junction table to share a file with a specific user.
+func (q *Queries) ShareFileWithUser(ctx context.Context, arg ShareFileWithUserParams) error {
+	_, err := q.db.Exec(ctx, shareFileWithUser, arg.UserFileID, arg.SharedWithUserID)
+	return err
+}
+
+const unshareFileWithUser = `-- name: UnshareFileWithUser :exec
+DELETE FROM file_shares_to_users
+WHERE user_file_id = $1 AND shared_with_user_id = $2
+`
+
+type UnshareFileWithUserParams struct {
+	UserFileID       int64
+	SharedWithUserID int64
+}
+
+// Removes a specific user's access to a shared file.
+func (q *Queries) UnshareFileWithUser(ctx context.Context, arg UnshareFileWithUserParams) error {
+	_, err := q.db.Exec(ctx, unshareFileWithUser, arg.UserFileID, arg.SharedWithUserID)
 	return err
 }

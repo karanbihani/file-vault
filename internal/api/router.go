@@ -39,8 +39,12 @@ func SetupRouter(dbpool *pgxpool.Pool, fileService *files.Service, authService *
 			protected.GET("/files", fileHandler.List)
 			protected.GET("/files/:id/download", fileHandler.Download)
 			protected.DELETE("/files/:id", fileHandler.Delete)
+			protected.GET("/files/shared-with-me", fileHandler.ListSharedWithMe) 
 
 			protected.POST("/files/:id/share", sharesHandler.CreatePublicLink)
+			protected.POST("/files/:id/share-to-user", sharesHandler.ShareWithUser)
+			protected.DELETE("/files/:id/share", sharesHandler.RevokePublicLinks)        
+			protected.DELETE("/files/:id/share-to-user", sharesHandler.UnshareWithUser)   
 		}
 	}
 	return router
