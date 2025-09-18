@@ -10,6 +10,7 @@ import (
 	"github.com/karanbihani/file-vault/internal/core/files" // Adjust path
 	"github.com/karanbihani/file-vault/internal/db"       // Add this import
 	"github.com/karanbihani/file-vault/internal/storage"  // Adjust path
+	"github.com/karanbihani/file-vault/internal/core/shares"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -45,10 +46,11 @@ func main() {
 	// We inject the shared 'queries' object into both services.
 	authService := auth.NewService(queries)
 	fileService := files.NewService(dbpool, queries, storageClient)
+	sharesService := shares.NewService(queries, storageClient) // Create the shares service
 	log.Println("Services initialized.")
 
 	// --- Gin Web Server Setup ---
-	router := api.SetupRouter(dbpool, fileService, authService)
+	router := api.SetupRouter(dbpool, fileService, authService, sharesService)
 
 	log.Println("Starting server on port 8080...")
 	if err := router.Run(":8080"); err != nil {
