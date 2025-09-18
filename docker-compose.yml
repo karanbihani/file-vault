@@ -1,5 +1,4 @@
-# This is the final, simplified baseline configuration for development.
-# It includes a persistent volume for the database and a shared volume for uploads.
+# This file defines the complete application stack, including the MinIO object storage service.
 version: '3.8'
 
 services:
@@ -13,7 +12,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
-    # This named volume ensures your database data persists even after you run 'docker-compose down'.
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -21,6 +19,27 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
+      retries: 5
+
+  # The MinIO Object Storage Service
+  minio:
+    image: minio/minio:latest
+    container_name: file_vault_minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_ACCESS_KEY}
+    # This command starts the MinIO server and tells it to create a 'data' directory for storage.
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000" # The API port
+      - "9001:9001" # The Web UI console port
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 2s
       retries: 5
 
   # The Go Backend Application Service
@@ -31,16 +50,21 @@ services:
       - "8080:8080"
     environment:
       DATABASE_URL: ${DATABASE_URL}
-    # This is the "shared folder" link.
-    volumes:
-      # It links your local './uploads' folder to the '/root/uploads' folder inside the container.
-      - ./uploads:/root/uploads
-    # The backend now waits for the postgres service to pass its health check before starting.
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY_ID}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_SECRET_ACCESS_KEY}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
+      # --- ADD THESE TWO LINES ---
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_LIFETIME_HOURS: ${JWT_LIFETIME_HOURS}
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     restart: unless-stopped
 
-# Defines the named volume for persistent database storage.
+# Named volumes for persistent data storage for both services.
 volumes:
   postgres_data:
+  minio_data:
