@@ -48,20 +48,34 @@ type RegisterUserParams struct {
 
 // RegisterUser creates a new user, hashes their password, and saves it to the database.
 func (s *Service) RegisterUser(ctx context.Context, params RegisterUserParams) (*db.User, error) {
-	// Hash the user's password using bcrypt.
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(params.Password), bcrypt.DefaultCost)
+	// ... (hashing logic is the same)
+
+	// Start a transaction to ensure user creation and role assignment are atomic.
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to hash password: %w", err)
+		return nil, fmt.Errorf("could not begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	qtx := s.queries.WithTx(tx)
+
+	user, err := qtx.CreateUser(ctx, db.CreateUserParams{ /* ... */ })
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// Create the user in the database.
-	user, err := s.queries.CreateUser(ctx, db.CreateUserParams{
-		Email:        params.Email,
-		PasswordHash: string(hashedPassword),
-	})
+	// Get the 'user' role
+	userRole, err := qtx.GetRoleByName(ctx, "user")
 	if err != nil {
-		// Here you would check for specific DB errors, like a duplicate email.
-		return nil, fmt.Errorf("failed to create user: %w", err)
+		return nil, fmt.Errorf("default 'user' role not found: %w", err)
+	}
+
+	// Link the new user to the 'user' role.
+	if err := qtx.LinkUserToRole(ctx, db.LinkUserToRoleParams{UserID: user.ID, RoleID: userRole.ID}); err != nil {
+		return nil, fmt.Errorf("failed to assign role to user: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return &user, nil

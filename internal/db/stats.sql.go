@@ -9,28 +9,53 @@ import (
 	"context"
 )
 
-const getUserStats = `-- name: GetUserStats :one
+const getUserDashboardStats = `-- name: GetUserDashboardStats :one
+WITH user_owned_files AS (
+  -- First, get all file IDs owned by the user.
+  SELECT id FROM user_files WHERE owner_id = $1
+)
 SELECT
-    u.storage_used_bytes AS deduplicated_usage,
-    COALESCE(SUM(pf.size_bytes), 0)::bigint AS original_usage
+  -- Cast results to bigint to ensure they are int64 in Go.
+  (SELECT COUNT(*) FROM user_owned_files)::bigint AS files_uploaded_count,
+  
+  (SELECT COALESCE(SUM(s.download_count), 0) FROM shares s WHERE s.user_file_id IN (SELECT id FROM user_owned_files))::bigint AS total_downloads_on_shares,
+  
+  (SELECT COUNT(*) FROM shares s WHERE s.user_file_id IN (SELECT id FROM user_owned_files))::bigint AS public_shares_count,
+  
+  (SELECT COUNT(*) FROM file_shares_to_users fstu WHERE fstu.user_file_id IN (SELECT id FROM user_owned_files))::bigint AS private_shares_count,
+  
+  u.storage_used_bytes AS deduplicated_storage_usage,
+  
+  (
+    SELECT COALESCE(SUM(pf.size_bytes), 0)
+    FROM user_files uf
+    JOIN physical_files pf ON uf.physical_file_id = pf.id
+    WHERE uf.owner_id = u.id
+  )::bigint AS original_storage_usage
 FROM users u
-LEFT JOIN user_files uf ON u.id = uf.owner_id
-LEFT JOIN physical_files pf ON uf.physical_file_id = pf.id
 WHERE u.id = $1
-GROUP BY u.id
 `
 
-type GetUserStatsRow struct {
-	DeduplicatedUsage int64
-	OriginalUsage     int64
+type GetUserDashboardStatsRow struct {
+	FilesUploadedCount       int64
+	TotalDownloadsOnShares   int64
+	PublicSharesCount        int64
+	PrivateSharesCount       int64
+	DeduplicatedStorageUsage int64
+	OriginalStorageUsage     int64
 }
 
-// Retrieves storage statistics for a single user.
-// It gets the pre-calculated deduplicated usage from the users table
-// and calculates the original total size by summing up the sizes of all files owned by the user.
-func (q *Queries) GetUserStats(ctx context.Context, id int64) (GetUserStatsRow, error) {
-	row := q.db.QueryRow(ctx, getUserStats, id)
-	var i GetUserStatsRow
-	err := row.Scan(&i.DeduplicatedUsage, &i.OriginalUsage)
+// Retrieves a comprehensive set of statistics for a user's dashboard.
+func (q *Queries) GetUserDashboardStats(ctx context.Context, id int64) (GetUserDashboardStatsRow, error) {
+	row := q.db.QueryRow(ctx, getUserDashboardStats, id)
+	var i GetUserDashboardStatsRow
+	err := row.Scan(
+		&i.FilesUploadedCount,
+		&i.TotalDownloadsOnShares,
+		&i.PublicSharesCount,
+		&i.PrivateSharesCount,
+		&i.DeduplicatedStorageUsage,
+		&i.OriginalStorageUsage,
+	)
 	return i, err
 }
