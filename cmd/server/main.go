@@ -8,6 +8,7 @@ import (
 	"github.com/karanbihani/file-vault/internal/api"      // Adjust path
 	"github.com/karanbihani/file-vault/internal/auth"     // Adjust path
 	"github.com/karanbihani/file-vault/internal/core/files" // Adjust path
+	"github.com/karanbihani/file-vault/internal/core/rbac" // <-- Add this
 	"github.com/karanbihani/file-vault/internal/db"       // Add this import
 	"github.com/karanbihani/file-vault/internal/storage"  // Adjust path
 	"github.com/karanbihani/file-vault/internal/core/stats"
@@ -18,8 +19,9 @@ import (
 func main() {
 	// --- Database Connection ---
 	dbURL := os.Getenv("DATABASE_URL")
+	log.Println("Database URL:", dbURL)
 	if dbURL == "" {
-		log.Fatal("DATABASE_URL environment variable is not set")
+		log.Fatal("DATABASE_URL environment variable is not set")	
 	}
 	dbpool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
@@ -32,7 +34,6 @@ func main() {
 	// We create the querier object ONCE here.
 	queries := db.New(dbpool)
 	
-
 	// --- MinIO Client Initialization ---
 	minioConfig := storage.Config{
 		Endpoint:        os.Getenv("MINIO_ENDPOINT"),
@@ -46,14 +47,16 @@ func main() {
 
 	// --- Initialize Services ---
 	// We inject the shared 'queries' object into both services.
-	authService := auth.NewService(queries)
+	authService := auth.NewService(dbpool, queries)
 	fileService := files.NewService(dbpool, queries, storageClient)
 	sharesService := shares.NewService(queries, storageClient) // Create the shares service
 	statsService := stats.NewService(queries)
+	rbacService := rbac.NewService(queries) // <-- Initialize the new RBAC service
+	
 	log.Println("Services initialized.")
 
 	// --- Gin Web Server Setup ---
-	router := api.SetupRouter(dbpool, fileService, authService, sharesService, statsService)
+	router := api.SetupRouter(queries, dbpool, fileService, authService, sharesService, statsService, rbacService)
 
 	log.Println("Starting server on port 8080...")
 	if err := router.Run(":8080"); err != nil {

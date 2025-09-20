@@ -7,57 +7,69 @@ import (
 	"github.com/karanbihani/file-vault/internal/core/files" // Adjust path
 	"github.com/karanbihani/file-vault/internal/core/shares" // Add this import
 	"github.com/karanbihani/file-vault/internal/core/stats"  // Add this import
+	"github.com/karanbihani/file-vault/internal/core/rbac" 
+	"github.com/karanbihani/file-vault/internal/db" // <-- Add this import for db.Queries
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func SetupRouter(dbpool *pgxpool.Pool, fileService *files.Service, authService *auth.Service, sharesService *shares.Service, statsService *stats.Service) *gin.Engine {
+func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.Service, authService *auth.Service, sharesService *shares.Service, statsService *stats.Service, rbacService *rbac.Service) *gin.Engine {
 	router := gin.Default()
 
 	fileHandler := NewFilesHandler(fileService)
 	authHandler := NewAuthHandler(authService)
 	sharesHandler := NewSharesHandler(sharesService)
 	statsHandler := NewStatsHandler(statsService) // Create the new handler
+	rbacHandler := NewRBACHandler(rbacService) // <-- Initialize the new RBAC handler
 
 	router.Use(RateLimiter(2, time.Second))
 
 	v1 := router.Group("/api/v1")
 	{
+		// --- Public Routes ---
 		v1.GET("/health", HealthCheckHandler(dbpool))
-
-		// --- Public Auth Routes ---
 		v1.POST("/register", authHandler.Register)
 		v1.POST("/login", authHandler.Login)
-
-		// --- Public Share Routes ---
 		v1.GET("/share/:token", sharesHandler.PublicDownload)
 
-		// --- Protected File Routes ---
-		// We create a new group for routes that require authentication.
+		// --- Protected User Routes ---
+		// All routes in this group require authentication first.
+		// Then, each route has a specific permission check.
 		protected := v1.Group("/")
 		protected.Use(AuthMiddleware())
 		{
-			protected.POST("/files", fileHandler.Upload)
-			protected.GET("/files", fileHandler.List)
-			protected.GET("/files/:id/download", fileHandler.Download)
-			protected.DELETE("/files/:id", fileHandler.Delete)
-			protected.GET("/files/shared-with-me", fileHandler.ListSharedWithMe) 
+			// File Management Routes
+			protected.POST("/files", PermissionMiddleware(queries, auth.PermissionFilesUpload), fileHandler.Upload)
+			protected.GET("/files", fileHandler.List) // Listing own files doesn't need a specific perm
+			protected.GET("/files/:id/download", PermissionMiddleware(queries, auth.PermissionFilesDownload), fileHandler.Download)
+			protected.DELETE("/files/:id", PermissionMiddleware(queries, auth.PermissionFilesDelete), fileHandler.Delete)
+			protected.GET("/files/shared-with-me", PermissionMiddleware(queries, auth.PermissionFilesReadShared), fileHandler.ListSharedWithMe) // Assuming List handler can be adapted
 
-			protected.POST("/files/:id/share", sharesHandler.CreatePublicLink)
-			protected.POST("/files/:id/share-to-user", sharesHandler.ShareWithUser)
-			protected.DELETE("/files/:id/share", sharesHandler.RevokePublicLinks)        
-			protected.DELETE("/files/:id/share-to-user", sharesHandler.UnshareWithUser)   
+			// Sharing Management Routes
+			protected.POST("/files/:id/share", PermissionMiddleware(queries, auth.PermissionSharesCreatePublic), sharesHandler.CreatePublicLink)
+			protected.POST("/files/:id/share-to-user", PermissionMiddleware(queries, auth.PermissionSharesCreateUser), sharesHandler.ShareWithUser)
+			protected.DELETE("/files/:id/share", PermissionMiddleware(queries, auth.PermissionSharesRevokePublic), sharesHandler.RevokePublicLinks)
+			protected.DELETE("/files/:id/share-to-user", PermissionMiddleware(queries, auth.PermissionSharesRevokeUser), sharesHandler.UnshareWithUser)
 
-			protected.GET("/stats", statsHandler.GetUserDashboardStats)
+			// Stats Route
+			protected.GET("/stats", PermissionMiddleware(queries, auth.PermissionStatsReadSelf), statsHandler.GetUserDashboardStats)
 		}
 
-		// --- ADMIN PROTECTED ROUTES ---
-		adminRoutes := v1.Group("/admin")
-		adminRoutes.Use(AuthMiddleware()) // Admins must be logged in...
-		adminRoutes.Use(AuthorizationMiddleware(authService, "admin:view_all_files")) // ...and must have this specific permission.
+
+		// --- Protected Admin & RBAC Management Routes ---
+		admin := v1.Group("/admin")
+		admin.Use(AuthMiddleware())
 		{
-			// We can now define admin-only endpoints here.
-			// adminRoutes.GET("/files", adminFileHandler.ListAllFiles)
+			// RBAC Management APIs
+			admin.GET("/roles", PermissionMiddleware(queries, auth.PermissionAdminManageRoles), rbacHandler.ListRoles)
+			admin.GET("/permissions", PermissionMiddleware(queries, auth.PermissionAdminManageRoles), rbacHandler.ListPermissions)
+			admin.GET("/roles/:roleId/permissions", PermissionMiddleware(queries, auth.PermissionAdminManageRoles), rbacHandler.GetPermissionsForRole)
+			admin.POST("/roles/:roleId/permissions/:permissionId", PermissionMiddleware(queries, auth.PermissionAdminManageRoles), rbacHandler.AddPermissionToRole)
+			admin.DELETE("/roles/:roleId/permissions/:permissionId", PermissionMiddleware(queries, auth.PermissionAdminManageRoles), rbacHandler.RemovePermissionFromRole)
+
+			// Other Admin APIs
+			// You can create a handler for this route later
+			admin.GET("/stats", PermissionMiddleware(queries, auth.PermissionAdminViewStats), func(c *gin.Context) { /* ... */ })
 		}
 	}
 	return router
