@@ -9,11 +9,13 @@ import (
 	"github.com/karanbihani/file-vault/internal/core/stats"  // Add this import
 	"github.com/karanbihani/file-vault/internal/core/rbac" 
 	"github.com/karanbihani/file-vault/internal/db" // <-- Add this import for db.Queries
+	"github.com/karanbihani/file-vault/internal/core/admin" // <-- Add this import for admin service
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.Service, authService *auth.Service, sharesService *shares.Service, statsService *stats.Service, rbacService *rbac.Service) *gin.Engine {
+func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.Service, authService *auth.Service,
+	sharesService *shares.Service, statsService *stats.Service, rbacService *rbac.Service, adminService *admin.Service) *gin.Engine {
 	router := gin.Default()
 
 	fileHandler := NewFilesHandler(fileService)
@@ -21,6 +23,7 @@ func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.S
 	sharesHandler := NewSharesHandler(sharesService)
 	statsHandler := NewStatsHandler(statsService) // Create the new handler
 	rbacHandler := NewRBACHandler(rbacService) // <-- Initialize the new RBAC handler
+	adminHandler := NewAdminHandler(adminService) // <-- Initialize the new Admin handler
 
 	router.Use(RateLimiter(2, time.Second))
 
@@ -62,14 +65,14 @@ func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.S
 		{
 			// RBAC Management APIs
 			admin.GET("/roles", PermissionMiddleware(queries, auth.PermissionAdminManageRoles), rbacHandler.ListRoles)
+			
 			admin.GET("/permissions", PermissionMiddleware(queries, auth.PermissionAdminManageRoles), rbacHandler.ListPermissions)
 			admin.GET("/roles/:roleId/permissions", PermissionMiddleware(queries, auth.PermissionAdminManageRoles), rbacHandler.GetPermissionsForRole)
 			admin.POST("/roles/:roleId/permissions/:permissionId", PermissionMiddleware(queries, auth.PermissionAdminManageRoles), rbacHandler.AddPermissionToRole)
 			admin.DELETE("/roles/:roleId/permissions/:permissionId", PermissionMiddleware(queries, auth.PermissionAdminManageRoles), rbacHandler.RemovePermissionFromRole)
-
-			// Other Admin APIs
-			// You can create a handler for this route later
-			admin.GET("/stats", PermissionMiddleware(queries, auth.PermissionAdminViewStats), func(c *gin.Context) { /* ... */ })
+			
+			admin.GET("/files", PermissionMiddleware(queries, auth.PermissionAdminViewAllFiles), adminHandler.ListAllFiles)
+			admin.GET("/stats", PermissionMiddleware(queries, auth.PermissionAdminViewAllStats), adminHandler.GetSystemStats)
 		}
 	}
 	return router

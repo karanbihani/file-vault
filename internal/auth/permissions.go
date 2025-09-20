@@ -19,5 +19,7 @@ const (
 
     // Admin-level permissions
     PermissionAdminManageRoles = "admin:manage_roles"
-    PermissionAdminViewStats   = "admin:view_stats"
+    PermissionAdminViewAllFiles = "admin:view_all_files" // <-- ADD THIS
+    PermissionAdminViewAllStats = "admin:view_all_stats" // <-- ADD THIS
+    PermissionAdminDownloadAnyFile = "admin:download_any_file" // <-- ADD THIS
 )

@@ -11,6 +11,7 @@ import (
 	"github.com/karanbihani/file-vault/internal/core/rbac" // <-- Add this
 	"github.com/karanbihani/file-vault/internal/db"       // Add this import
 	"github.com/karanbihani/file-vault/internal/storage"  // Adjust path
+	"github.com/karanbihani/file-vault/internal/core/admin"
 	"github.com/karanbihani/file-vault/internal/core/stats"
 	"github.com/karanbihani/file-vault/internal/core/shares"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -52,11 +53,12 @@ func main() {
 	sharesService := shares.NewService(queries, storageClient) // Create the shares service
 	statsService := stats.NewService(queries)
 	rbacService := rbac.NewService(queries) // <-- Initialize the new RBAC service
+	adminService := admin.NewService(queries) // <-- ADD THIS
 	
 	log.Println("Services initialized.")
 
 	// --- Gin Web Server Setup ---
-	router := api.SetupRouter(queries, dbpool, fileService, authService, sharesService, statsService, rbacService)
+	router := api.SetupRouter(queries, dbpool, fileService, authService, sharesService, statsService, rbacService, adminService)
 
 	log.Println("Starting server on port 8080...")
 	if err := router.Run(":8080"); err != nil {

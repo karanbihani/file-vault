@@ -20,7 +20,9 @@ INSERT INTO permissions (name) VALUES
     ('shares:revoke:user'),
     ('stats:read:self'),
     ('admin:manage_roles'),
-    ('admin:view_stats')
+    ('admin:view_all_files'),
+    ('admin:view_all_stats'),
+    ('admin:download_any_file')
 ON CONFLICT (name) DO NOTHING;
 
 -- Map permissions to roles
@@ -41,5 +43,17 @@ ON CONFLICT DO NOTHING;
 
 -- 'admin' role gets ALL permissions
 INSERT INTO role_permissions (role_id, permission_id) VALUES
-    (2, 1), (2, 2), (2, 3), (2, 4), (2, 5), (2, 6), (2, 7), (2, 8), (2, 9), (2, 10), (2, 11)
+    (2, 1), 
+    (2, 2), 
+    (2, 3), 
+    (2, 4), 
+    (2, 5), 
+    (2, 6), 
+    (2, 7), 
+    (2, 8), 
+    (2, 9), 
+    (2, 10), -- admin can admin:manage_roles
+    (2, 11), -- admin can admin:view_all_files
+    (2, 12), -- admin can admin:view_all_stats
+    (2, 13)  -- admin can admin:download_any_file
 ON CONFLICT DO NOTHING;

@@ -165,32 +165,54 @@ func (s *Service) ListFilesSharedWithMe(ctx context.Context, userID int64) ([]db
 }
 
 func (s *Service) DownloadFile(ctx context.Context, fileID, userID int64) (*DownloadFileResponse, error) {
-	// 1. Use our new, powerful query to authorize and get file metadata in a single step.
-	// This query will only succeed if the user is the owner OR the file is shared with them.
-	// CORRECTED: Using the new, explicitly named parameters.
-	fileMeta, err := s.queries.GetFileForUserDownload(ctx, db.GetFileForUserDownloadParams{
-		FileID:           fileID,
-		RequestingUserID: userID,
-	})
+	permissions, err := s.queries.GetUserPermissions(ctx, userID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			// If no rows are found, it means the user has no access.
-			return nil, fmt.Errorf("file not found or access denied")
-		}
-		// Handle other potential database errors.
-		return nil, fmt.Errorf("failed to get file metadata: %w", err)
+		return nil, fmt.Errorf("could not check user permissions: %w", err)
 	}
 
-	// 2. If the query succeeded, we are authorized. Get the file object from MinIO.
+	hasAdminDownloadPerm := false
+	for _, p := range permissions {
+		if p == "admin:download_any_file" { // Use the constant here
+			hasAdminDownloadPerm = true
+			break
+		}
+	}
+
+	var fileMeta struct {
+		Filename    string
+		StoragePath string
+		SizeBytes   int64
+	}
+
+	if hasAdminDownloadPerm {
+		adminFileMeta, err := s.queries.GetFileMetadataByID(ctx, fileID)
+		if err != nil {
+			if err == pgx.ErrNoRows { return nil, fmt.Errorf("file not found") }
+			return nil, fmt.Errorf("failed to get file metadata for admin: %w", err)
+		}
+		fileMeta.Filename = adminFileMeta.Filename
+		fileMeta.StoragePath = adminFileMeta.StoragePath
+		fileMeta.SizeBytes = adminFileMeta.SizeBytes
+	} else {
+		userFileMeta, err := s.queries.GetFileForUserDownload(ctx, db.GetFileForUserDownloadParams{
+			FileID: fileID, RequestingUserID: userID,
+		})
+		if err != nil {
+			if err == pgx.ErrNoRows { return nil, fmt.Errorf("file not found or access denied") }
+			return nil, fmt.Errorf("failed to get file metadata: %w", err)
+		}
+		fileMeta.Filename = userFileMeta.Filename
+		fileMeta.StoragePath = userFileMeta.StoragePath
+		fileMeta.SizeBytes = userFileMeta.SizeBytes
+	}
+
 	object, err := s.storage.Get(ctx, fileMeta.StoragePath)
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve file from storage: %w", err)
 	}
 
 	return &DownloadFileResponse{
-		Data:     object,
-		Filename: fileMeta.Filename,
-		Size:     fileMeta.SizeBytes,
+		Data: object, Filename: fileMeta.Filename, Size: fileMeta.SizeBytes,
 	}, nil
 }
 
