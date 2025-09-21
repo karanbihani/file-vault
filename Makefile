@@ -1,5 +1,6 @@
 # This Makefile provides a set of useful commands to manage the application stack and tasks.
 .PHONY: up down build logs tidy sqlc migrate-up migrate-down migrate-up-one migrate-down-one
+include .env
 
 # ==============================================================================
 # Configuration Variables
@@ -55,7 +56,7 @@ sqlc:
 # Applies ALL 'up' migrations.
 migrate-up:
 	@echo "Applying all UP migrations..."
-	@docker run --rm -v $(PWD)/$(MIGRATIONS_DIR):/migrations --network $(NETWORK_NAME) $(MIGRATE_IMAGE) -path=/migrations -database $(DATABASE_URL) up
+	docker run --rm -v $(PWD)/$(MIGRATIONS_DIR):/migrations --network $(NETWORK_NAME) $(MIGRATE_IMAGE) -path=/migrations -database $(DATABASE_URL) up
 
 # Rolls back ALL migrations.
 migrate-down:
@@ -72,3 +73,9 @@ migrate-down-one:
 	@echo "Rolling back last migration..."
 	@docker run --rm -v $(PWD)/$(MIGRATIONS_DIR):/migrations --network $(NETWORK_NAME) $(MIGRATE_IMAGE) -path=/migrations -database $(DATABASE_URL) down 1
 
+# Seeds the database with initial roles, permissions, and their mappings.
+.PHONY: seed
+seed:
+	@echo "Seeding the database..."
+	@docker exec -i file_vault_db psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} < sql/seeds/000001_roles_and_permissions.sql
+	@echo "Seeding complete."

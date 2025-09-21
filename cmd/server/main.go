@@ -8,16 +8,23 @@ import (
 	"github.com/karanbihani/file-vault/internal/api"      // Adjust path
 	"github.com/karanbihani/file-vault/internal/auth"     // Adjust path
 	"github.com/karanbihani/file-vault/internal/core/files" // Adjust path
+	"github.com/karanbihani/file-vault/internal/core/rbac" // <-- Add this
 	"github.com/karanbihani/file-vault/internal/db"       // Add this import
 	"github.com/karanbihani/file-vault/internal/storage"  // Adjust path
+	"github.com/karanbihani/file-vault/internal/core/admin"
+	"github.com/karanbihani/file-vault/internal/core/stats"
+	"github.com/karanbihani/file-vault/internal/core/shares"
+	"github.com/karanbihani/file-vault/internal/core/search"
+	"github.com/karanbihani/file-vault/internal/core/audit" // Adjust path
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
 	// --- Database Connection ---
 	dbURL := os.Getenv("DATABASE_URL")
+	log.Println("Database URL:", dbURL)
 	if dbURL == "" {
-		log.Fatal("DATABASE_URL environment variable is not set")
+		log.Fatal("DATABASE_URL environment variable is not set")	
 	}
 	dbpool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
@@ -29,7 +36,7 @@ func main() {
 	// --- SQLC Querier Initialization ---
 	// We create the querier object ONCE here.
 	queries := db.New(dbpool)
-
+	
 	// --- MinIO Client Initialization ---
 	minioConfig := storage.Config{
 		Endpoint:        os.Getenv("MINIO_ENDPOINT"),
@@ -43,12 +50,20 @@ func main() {
 
 	// --- Initialize Services ---
 	// We inject the shared 'queries' object into both services.
-	authService := auth.NewService(queries)
-	fileService := files.NewService(dbpool, queries, storageClient)
+
+	auditService := audit.NewService(queries)
+	authService := auth.NewService(dbpool, queries)
+	fileService := files.NewService(dbpool, queries, storageClient, auditService)
+	sharesService := shares.NewService(queries, storageClient, auditService) // Create the shares service
+	statsService := stats.NewService(queries)
+	rbacService := rbac.NewService(queries) // <-- Initialize the new RBAC service
+	adminService := admin.NewService(queries) // <-- ADD THIS
+	searchService := search.NewService(queries)
+
 	log.Println("Services initialized.")
 
 	// --- Gin Web Server Setup ---
-	router := api.SetupRouter(dbpool, fileService, authService)
+	router := api.SetupRouter(queries, dbpool, fileService, authService, sharesService, statsService, rbacService, adminService, searchService)
 
 	log.Println("Starting server on port 8080...")
 	if err := router.Run(":8080"); err != nil {

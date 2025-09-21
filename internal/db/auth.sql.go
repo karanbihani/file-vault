@@ -31,6 +31,28 @@ func (q *Queries) CreateRole(ctx context.Context, name string) (Role, error) {
 	return i, err
 }
 
+const getPermissionByName = `-- name: GetPermissionByName :one
+SELECT id, name FROM permissions WHERE name = $1
+`
+
+func (q *Queries) GetPermissionByName(ctx context.Context, name string) (Permission, error) {
+	row := q.db.QueryRow(ctx, getPermissionByName, name)
+	var i Permission
+	err := row.Scan(&i.ID, &i.Name)
+	return i, err
+}
+
+const getRoleByName = `-- name: GetRoleByName :one
+SELECT id, name FROM roles WHERE name = $1
+`
+
+func (q *Queries) GetRoleByName(ctx context.Context, name string) (Role, error) {
+	row := q.db.QueryRow(ctx, getRoleByName, name)
+	var i Role
+	err := row.Scan(&i.ID, &i.Name)
+	return i, err
+}
+
 const getUserPermissions = `-- name: GetUserPermissions :many
 SELECT p.name
 FROM permissions p
@@ -59,4 +81,32 @@ func (q *Queries) GetUserPermissions(ctx context.Context, userID int64) ([]strin
 		return nil, err
 	}
 	return items, nil
+}
+
+const linkRoleToPermission = `-- name: LinkRoleToPermission :exec
+INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)
+`
+
+type LinkRoleToPermissionParams struct {
+	RoleID       int32
+	PermissionID int32
+}
+
+func (q *Queries) LinkRoleToPermission(ctx context.Context, arg LinkRoleToPermissionParams) error {
+	_, err := q.db.Exec(ctx, linkRoleToPermission, arg.RoleID, arg.PermissionID)
+	return err
+}
+
+const linkUserToRole = `-- name: LinkUserToRole :exec
+INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)
+`
+
+type LinkUserToRoleParams struct {
+	UserID int64
+	RoleID int32
+}
+
+func (q *Queries) LinkUserToRole(ctx context.Context, arg LinkUserToRoleParams) error {
+	_, err := q.db.Exec(ctx, linkUserToRole, arg.UserID, arg.RoleID)
+	return err
 }

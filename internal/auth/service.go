@@ -3,23 +3,26 @@ package auth
 import (
 	"context"
 	"fmt"
-	"time"
-	"os"
 	"log"
+	"os"
 	"strconv"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/karanbihani/file-vault/internal/db" // Adjust to your module path
-	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type Service struct {
+	db          *pgxpool.Pool 
 	queries     *db.Queries
 	jwtSecret   []byte
 	jwtLifetime time.Duration
 }
 
-func NewService(queries *db.Queries) *Service {
+func NewService(dbpool *pgxpool.Pool, queries *db.Queries) *Service {
 	secret := os.Getenv("JWT_SECRET_KEY")
 	if secret == "" {
 		log.Fatal("JWT_SECRET_KEY environment variable is not set")
@@ -35,6 +38,7 @@ func NewService(queries *db.Queries) *Service {
 	}
 
 	return &Service{
+		db:          dbpool, 
 		queries:     queries,
 		jwtSecret:   []byte(secret),
 		jwtLifetime: time.Hour * time.Duration(lifetimeHours),
@@ -48,22 +52,60 @@ type RegisterUserParams struct {
 
 // RegisterUser creates a new user, hashes their password, and saves it to the database.
 func (s *Service) RegisterUser(ctx context.Context, params RegisterUserParams) (*db.User, error) {
-	// Hash the user's password using bcrypt.
+	log.Println("Starting user registration process")
+	log.Printf("Input params: %+v", params)
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(params.Password), bcrypt.DefaultCost)
 	if err != nil {
+		log.Printf("Error hashing password: %v", err)
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// Create the user in the database.
-	user, err := s.queries.CreateUser(ctx, db.CreateUserParams{
+	// Start a transaction to ensure user creation and role assignment are atomic.
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		log.Printf("Error starting transaction: %v", err)
+		return nil, fmt.Errorf("could not begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			log.Println("Rolling back transaction due to error")
+			tx.Rollback(ctx)
+		}
+	}()
+
+	qtx := s.queries.WithTx(tx)
+
+	log.Println("Creating user in the database")
+	user, err := qtx.CreateUser(ctx, db.CreateUserParams{
 		Email:        params.Email,
 		PasswordHash: string(hashedPassword),
 	})
 	if err != nil {
-		// Here you would check for specific DB errors, like a duplicate email.
+		log.Printf("Error creating user: %v", err)
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
+	log.Println("Fetching default 'user' role")
+	userRole, err := qtx.GetRoleByName(ctx, "user")
+	if err != nil {
+		log.Printf("Error fetching 'user' role: %v", err)
+		return nil, fmt.Errorf("default 'user' role not found: %w", err)
+	}
+
+	log.Println("Linking user to 'user' role")
+	if err := qtx.LinkUserToRole(ctx, db.LinkUserToRoleParams{UserID: user.ID, RoleID: userRole.ID}); err != nil {
+		log.Printf("Error linking user to role: %v", err)
+		return nil, fmt.Errorf("failed to assign role to user: %w", err)
+	}
+
+	log.Println("Committing transaction")
+	if err := tx.Commit(ctx); err != nil {
+		log.Printf("Error committing transaction: %v", err)
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	log.Println("User registration successful")
 	return &user, nil
 }
 

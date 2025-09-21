@@ -14,6 +14,8 @@ import (
 
 	"github.com/karanbihani/file-vault/internal/db"      
 	"github.com/karanbihani/file-vault/internal/storage" 
+	"github.com/karanbihani/file-vault/internal/core/audit" 
+
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -24,13 +26,15 @@ type Service struct {
 	db      *pgxpool.Pool
 	queries *db.Queries
 	storage *storage.Client
+	auditService   *audit.Service
 }
 
-func NewService(dbpool *pgxpool.Pool, queries *db.Queries, storageClient *storage.Client) *Service {
+func NewService(dbpool *pgxpool.Pool, queries *db.Queries, storageClient *storage.Client, auditService *audit.Service) *Service {
 	return &Service{
 		db:      dbpool,
 		queries: queries,
 		storage: storageClient,
+		auditService:   auditService,
 	}
 }
 
@@ -146,6 +150,11 @@ func (s *Service) UploadFile(ctx context.Context, params UploadFileParams) (*db.
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
+	s.auditService.LogActivity(ctx, newUserFile.OwnerID, "file:upload", map[string]interface{}{
+		"file_id": newUserFile.ID,
+		"filename": newUserFile.Filename,
+	})
+
 	return &newUserFile, nil
 }
 
@@ -159,29 +168,63 @@ type DownloadFileResponse struct {
 	Size     int64
 }
 
-func (s *Service) DownloadFile(ctx context.Context, fileID, ownerID int64) (*DownloadFileResponse, error) {
-	fileMeta, err := s.queries.GetUserFileForDownload(ctx, db.GetUserFileForDownloadParams{ID: fileID, OwnerID: ownerID})
+// ListFilesSharedWithMe retrieves all files that have been shared with a given user.
+func (s *Service) ListFilesSharedWithMe(ctx context.Context, userID int64) ([]db.UserFile, error) {
+	return s.queries.ListFilesSharedWithUser(ctx, userID)
+}
+
+func (s *Service) DownloadFile(ctx context.Context, fileID, userID int64) (*DownloadFileResponse, error) {
+	permissions, err := s.queries.GetUserPermissions(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("file not found or access denied: %w", err)
+		return nil, fmt.Errorf("could not check user permissions: %w", err)
 	}
 
-	// CORRECTED: 'object' is now of type *minio.Object, so we can call .Stat()
+	hasAdminDownloadPerm := false
+	for _, p := range permissions {
+		if p == "admin:download_any_file" { // Use the constant here
+			hasAdminDownloadPerm = true
+			break
+		}
+	}
+
+	var fileMeta struct {
+		Filename    string
+		StoragePath string
+		SizeBytes   int64
+	}
+
+	if hasAdminDownloadPerm {
+		adminFileMeta, err := s.queries.GetFileMetadataByID(ctx, fileID)
+		if err != nil {
+			if err == pgx.ErrNoRows { return nil, fmt.Errorf("file not found") }
+			return nil, fmt.Errorf("failed to get file metadata for admin: %w", err)
+		}
+		fileMeta.Filename = adminFileMeta.Filename
+		fileMeta.StoragePath = adminFileMeta.StoragePath
+		fileMeta.SizeBytes = adminFileMeta.SizeBytes
+	} else {
+		userFileMeta, err := s.queries.GetFileForUserDownload(ctx, db.GetFileForUserDownloadParams{
+			FileID: fileID, RequestingUserID: userID,
+		})
+		if err != nil {
+			if err == pgx.ErrNoRows { return nil, fmt.Errorf("file not found or access denied") }
+			return nil, fmt.Errorf("failed to get file metadata: %w", err)
+		}
+		fileMeta.Filename = userFileMeta.Filename
+		fileMeta.StoragePath = userFileMeta.StoragePath
+		fileMeta.SizeBytes = userFileMeta.SizeBytes
+	}
+
 	object, err := s.storage.Get(ctx, fileMeta.StoragePath)
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve file from storage: %w", err)
 	}
 
-	stat, err := object.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("could not get file stats from storage: %w", err)
-	}
-
 	return &DownloadFileResponse{
-		Data:     object,
-		Filename: fileMeta.Filename,
-		Size:     stat.Size,
+		Data: object, Filename: fileMeta.Filename, Size: fileMeta.SizeBytes,
 	}, nil
 }
+
 
 func (s *Service) DeleteFile(ctx context.Context, fileID, ownerID int64) error {
 	// CORRECTED: Using the new, more secure query that requires both fileID and ownerID.
@@ -233,5 +276,9 @@ func (s *Service) DeleteFile(ctx context.Context, fileID, ownerID int64) error {
 		}
 	}
 
+	s.auditService.LogActivity(ctx, ownerID, "file:delete", map[string]interface{}{
+		"file_id": fileID,
+	})
+	
 	return tx.Commit(ctx)
 }

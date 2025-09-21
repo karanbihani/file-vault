@@ -3,8 +3,9 @@ package api
 import (
 	"net/http"
 
-	"github.com/karanbihani/file-vault/internal/auth" // Adjust to your module path
 	"github.com/gin-gonic/gin"
+	"github.com/karanbihani/file-vault/internal/auth" // Adjust to your module path
+	"fmt"
 )
 
 // AuthHandler holds the dependencies for the auth handlers.
@@ -28,6 +29,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	fmt.Printf("Registering user with email: %s\n", params.Email)
+	
 	user, err := h.authService.RegisterUser(c.Request.Context(), params)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

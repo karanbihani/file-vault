@@ -64,6 +64,18 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # The Frontend Application Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: file_vault_frontend
+    ports:
+      - "3000:80" # We'll access the frontend on http://localhost:3000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
 # Named volumes for persistent data storage for both services.
 volumes:
   postgres_data:

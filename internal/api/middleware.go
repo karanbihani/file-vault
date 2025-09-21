@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -11,9 +12,16 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// The same secret key used in the auth service for signing tokens.
-// In a real app, this should come from a secure environment variable.
-var jwtSecret = []byte("my-super-secret-key")
+// getJWTSecret retrieves the JWT secret from an environment variable.
+func getJWTSecret() []byte {
+	secret := os.Getenv("JWT_SECRET_KEY")
+	if secret == "" {
+		panic("JWT_SECRET environment variable is not set")
+	}
+	return []byte(secret)
+}
+
+var jwtSecret = getJWTSecret()
 
 // AuthMiddleware creates a Gin middleware for JWT authentication.
 func AuthMiddleware() gin.HandlerFunc {

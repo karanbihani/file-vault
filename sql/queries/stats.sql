@@ -1,0 +1,27 @@
+-- name: GetUserDashboardStats :one
+-- Retrieves a comprehensive set of statistics for a user's dashboard.
+WITH user_owned_files AS (
+  -- First, get all file IDs owned by the user.
+  SELECT id FROM user_files WHERE owner_id = $1
+)
+SELECT
+  -- Cast results to bigint to ensure they are int64 in Go.
+  (SELECT COUNT(*) FROM user_owned_files)::bigint AS files_uploaded_count,
+  
+  (SELECT COALESCE(SUM(s.download_count), 0) FROM shares s WHERE s.user_file_id IN (SELECT id FROM user_owned_files))::bigint AS total_downloads_on_shares,
+  
+  (SELECT COUNT(*) FROM shares s WHERE s.user_file_id IN (SELECT id FROM user_owned_files))::bigint AS public_shares_count,
+  
+  (SELECT COUNT(*) FROM file_shares_to_users fstu WHERE fstu.user_file_id IN (SELECT id FROM user_owned_files))::bigint AS private_shares_count,
+  
+  u.storage_used_bytes AS deduplicated_storage_usage,
+  
+  (
+    SELECT COALESCE(SUM(pf.size_bytes), 0)
+    FROM user_files uf
+    JOIN physical_files pf ON uf.physical_file_id = pf.id
+    WHERE uf.owner_id = u.id
+  )::bigint AS original_storage_usage
+FROM users u
+WHERE u.id = $1;
+
