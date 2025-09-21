@@ -14,6 +14,8 @@ import (
 
 	"github.com/karanbihani/file-vault/internal/db"      
 	"github.com/karanbihani/file-vault/internal/storage" 
+	"github.com/karanbihani/file-vault/internal/core/audit" 
+
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -24,13 +26,15 @@ type Service struct {
 	db      *pgxpool.Pool
 	queries *db.Queries
 	storage *storage.Client
+	auditService   *audit.Service
 }
 
-func NewService(dbpool *pgxpool.Pool, queries *db.Queries, storageClient *storage.Client) *Service {
+func NewService(dbpool *pgxpool.Pool, queries *db.Queries, storageClient *storage.Client, auditService *audit.Service) *Service {
 	return &Service{
 		db:      dbpool,
 		queries: queries,
 		storage: storageClient,
+		auditService:   auditService,
 	}
 }
 
@@ -145,6 +149,11 @@ func (s *Service) UploadFile(ctx context.Context, params UploadFileParams) (*db.
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
+
+	s.auditService.LogActivity(ctx, newUserFile.OwnerID, "file:upload", map[string]interface{}{
+		"file_id": newUserFile.ID,
+		"filename": newUserFile.Filename,
+	})
 
 	return &newUserFile, nil
 }
@@ -267,5 +276,9 @@ func (s *Service) DeleteFile(ctx context.Context, fileID, ownerID int64) error {
 		}
 	}
 
+	s.auditService.LogActivity(ctx, ownerID, "file:delete", map[string]interface{}{
+		"file_id": fileID,
+	})
+	
 	return tx.Commit(ctx)
 }

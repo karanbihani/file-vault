@@ -31,3 +31,12 @@ func (h *AdminHandler) GetSystemStats(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, stats)
 }
+
+func (h *AdminHandler) ListAuditLogs(c *gin.Context) {
+	logs, err := h.adminService.ListAuditLogs(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, logs)
+}

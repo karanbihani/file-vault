@@ -17,9 +17,15 @@ const (
     // Statistics Permissions
     PermissionStatsReadSelf = "stats:read:self"
 
+    // Search Permissions
+    PermissionSearchSelf = "search:self"
+    PermissionSearchAll  = "search:all"
+
     // Admin-level permissions
     PermissionAdminManageRoles = "admin:manage_roles"
     PermissionAdminViewAllFiles = "admin:view_all_files" // <-- ADD THIS
     PermissionAdminViewAllStats = "admin:view_all_stats" // <-- ADD THIS
     PermissionAdminDownloadAnyFile = "admin:download_any_file" // <-- ADD THIS
+    PermissionAdminViewAuditLogs = "admin:view_audit_logs"
+
 )

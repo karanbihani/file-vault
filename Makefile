@@ -77,5 +77,5 @@ migrate-down-one:
 .PHONY: seed
 seed:
 	@echo "Seeding the database..."
-	@docker exec -i file_vault_db psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} < sql/seeds/0001_roles_and_permissions.sql
+	@docker exec -i file_vault_db psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} < sql/seeds/000001_roles_and_permissions.sql
 	@echo "Seeding complete."

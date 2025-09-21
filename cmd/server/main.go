@@ -14,6 +14,8 @@ import (
 	"github.com/karanbihani/file-vault/internal/core/admin"
 	"github.com/karanbihani/file-vault/internal/core/stats"
 	"github.com/karanbihani/file-vault/internal/core/shares"
+	"github.com/karanbihani/file-vault/internal/core/search"
+	"github.com/karanbihani/file-vault/internal/core/audit" // Adjust path
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -48,17 +50,20 @@ func main() {
 
 	// --- Initialize Services ---
 	// We inject the shared 'queries' object into both services.
+
+	auditService := audit.NewService(queries)
 	authService := auth.NewService(dbpool, queries)
-	fileService := files.NewService(dbpool, queries, storageClient)
-	sharesService := shares.NewService(queries, storageClient) // Create the shares service
+	fileService := files.NewService(dbpool, queries, storageClient, auditService)
+	sharesService := shares.NewService(queries, storageClient, auditService) // Create the shares service
 	statsService := stats.NewService(queries)
 	rbacService := rbac.NewService(queries) // <-- Initialize the new RBAC service
 	adminService := admin.NewService(queries) // <-- ADD THIS
-	
+	searchService := search.NewService(queries)
+
 	log.Println("Services initialized.")
 
 	// --- Gin Web Server Setup ---
-	router := api.SetupRouter(queries, dbpool, fileService, authService, sharesService, statsService, rbacService, adminService)
+	router := api.SetupRouter(queries, dbpool, fileService, authService, sharesService, statsService, rbacService, adminService, searchService)
 
 	log.Println("Starting server on port 8080...")
 	if err := router.Run(":8080"); err != nil {

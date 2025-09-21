@@ -10,6 +10,7 @@ import (
 
 	"github.com/karanbihani/file-vault/internal/db"      // Adjust to your module path
 	"github.com/karanbihani/file-vault/internal/storage" // Adjust to your module path
+	"github.com/karanbihani/file-vault/internal/core/audit"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -17,13 +18,15 @@ import (
 type Service struct {
 	queries *db.Queries
 	storage *storage.Client
+	auditService *audit.Service 
 }
 
 // NewService creates a new sharing service.
-func NewService(queries *db.Queries, storageClient *storage.Client) *Service {
+func NewService(queries *db.Queries, storageClient *storage.Client, auditService *audit.Service) *Service {
 	return &Service{
 		queries: queries,
 		storage: storageClient,
+		auditService: audit.NewService(queries),
 	}
 }
 
@@ -67,6 +70,11 @@ func (s *Service) CreatePublicLink(ctx context.Context, fileID, ownerID int64) (
 		return nil, fmt.Errorf("failed to create share link in database: %w", err)
 	}
 
+	s.auditService.LogActivity(ctx, ownerID, "share:create_public", map[string]interface{}{
+		"file_id": fileID,
+		"share_token": token,
+	})
+	
 	return &share, nil
 }
 
@@ -153,6 +161,13 @@ func (s *Service) ShareFileWithUser(ctx context.Context, fileID, ownerID int64, 
 	}
 
 	log.Printf("User %d successfully shared file %d with user %d (%s)", ownerID, fileID, recipient.ID, recipientEmail)
+
+	s.auditService.LogActivity(ctx, ownerID, "share:create_user", map[string]interface{}{
+		"file_id": fileID,
+		"shared_with_user_id": recipient.ID,
+		"shared_with_email": recipientEmail,
+	})
+
 	return nil
 }
 
@@ -166,12 +181,16 @@ func (s *Service) RevokePublicLinks(ctx context.Context, fileID, ownerID int64) 
 		return fmt.Errorf("failed to verify file ownership: %w", err)
 	}
 
+	s.auditService.LogActivity(ctx, ownerID, "share:revoke_public", map[string]interface{}{
+		"file_id": fileID,
+	})
+
 	return s.queries.DeletePublicShareLinksByFileID(ctx, fileID)
 }
 
 // UnshareFileWithUser removes a specific user's access to a shared file.
 func (s *Service) UnshareFileWithUser(ctx context.Context, fileID, ownerID int64, recipientID int64) error {
-	// Verify ownership of the file.
+	// First, verify ownership of the file.
 	_, err := s.queries.GetUserFileForDownload(ctx, db.GetUserFileForDownloadParams{ID: fileID, OwnerID: ownerID})
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -180,8 +199,22 @@ func (s *Service) UnshareFileWithUser(ctx context.Context, fileID, ownerID int64
 		return fmt.Errorf("failed to verify file ownership: %w", err)
 	}
 
-	return s.queries.UnshareFileWithUser(ctx, db.UnshareFileWithUserParams{
+	// --- THIS IS THE FIX ---
+	// 1. Perform the database action first.
+	err = s.queries.UnshareFileWithUser(ctx, db.UnshareFileWithUserParams{
 		UserFileID:       fileID,
 		SharedWithUserID: recipientID,
 	})
+	if err != nil {
+		return err // Return the error if the action fails.
+	}
+
+	// 2. Only if the action is successful, create the audit log.
+	s.auditService.LogActivity(ctx, ownerID, "share:revoke_user", map[string]interface{}{
+		"file_id":                 fileID,
+		"unshared_from_user_id": recipientID,
+	})
+	// --- END OF FIX ---
+
+	return nil
 }

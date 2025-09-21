@@ -10,12 +10,13 @@ import (
 	"github.com/karanbihani/file-vault/internal/core/rbac" 
 	"github.com/karanbihani/file-vault/internal/db" // <-- Add this import for db.Queries
 	"github.com/karanbihani/file-vault/internal/core/admin" // <-- Add this import for admin service
+	"github.com/karanbihani/file-vault/internal/core/search"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.Service, authService *auth.Service,
-	sharesService *shares.Service, statsService *stats.Service, rbacService *rbac.Service, adminService *admin.Service) *gin.Engine {
+func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.Service, authService *auth.Service, sharesService *shares.Service,
+	statsService *stats.Service, rbacService *rbac.Service, adminService *admin.Service, searchService *search.Service) *gin.Engine {
 	router := gin.Default()
 
 	fileHandler := NewFilesHandler(fileService)
@@ -24,6 +25,7 @@ func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.S
 	statsHandler := NewStatsHandler(statsService) // Create the new handler
 	rbacHandler := NewRBACHandler(rbacService) // <-- Initialize the new RBAC handler
 	adminHandler := NewAdminHandler(adminService) // <-- Initialize the new Admin handler
+	searchHandler := NewSearchHandler(searchService) // <-- Initialize the new handler
 
 	router.Use(RateLimiter(2, time.Second))
 
@@ -56,6 +58,9 @@ func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.S
 
 			// Stats Route
 			protected.GET("/stats", PermissionMiddleware(queries, auth.PermissionStatsReadSelf), statsHandler.GetUserDashboardStats)
+
+			// Search Route
+			protected.GET("/search", searchHandler.Search)
 		}
 
 
@@ -73,6 +78,7 @@ func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.S
 			
 			admin.GET("/files", PermissionMiddleware(queries, auth.PermissionAdminViewAllFiles), adminHandler.ListAllFiles)
 			admin.GET("/stats", PermissionMiddleware(queries, auth.PermissionAdminViewAllStats), adminHandler.GetSystemStats)
+			admin.GET("/logs", PermissionMiddleware(queries, auth.PermissionAdminViewAuditLogs), adminHandler.ListAuditLogs)
 		}
 	}
 	return router
