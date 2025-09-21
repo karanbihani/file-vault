@@ -34,5 +34,6 @@ go.work.sum
 .vscode/
 
 test/
+uploads/
 
-frontend/node_modules/
+/node_modules/
