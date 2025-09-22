@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { debounce } from "../utils/rateLimiter";
 
 interface SearchBarProps {
   onSearch: (searchTerm: string) => void;
@@ -7,14 +8,15 @@ interface SearchBarProps {
 const SearchBar = ({ onSearch }: SearchBarProps) => {
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Debounce the search - trigger search 300ms after user stops typing
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      onSearch(searchTerm);
-    }, 300);
+  // Create a debounced search function with increased delay to respect rate limits
+  const debouncedSearch = useCallback(
+    debounce((term: string) => onSearch(term), 800), // 800ms delay
+    [onSearch]
+  );
 
-    return () => clearTimeout(timer);
-  }, [searchTerm, onSearch]);
+  useEffect(() => {
+    debouncedSearch(searchTerm);
+  }, [searchTerm, debouncedSearch]);
 
   return (
     <div className="mb-6">

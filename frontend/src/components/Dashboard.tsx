@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import apiClient from "../api/apiClient";
 import ViewToggleButton from "./ViewToggleButton";
 import FilePreviewModal from "./FilePreviewModal";
-import UploadZone from "./UploadZone"; // <-- IMPORT THE NEW COMPONENT
-import StatsDisplay from "./StatsDisplay"; // <-- IMPORT STATS
+import UploadZone from "./UploadZone";
 import SearchBar from "./SearchBar";
-import TagManager from "./TagManager"; // <-- IMPORT TAG MANAGER
-import FileActions from "./FileActions"; // <-- IMPORT FILE ACTIONS
+import TagManager from "./TagManager";
+import FileActions from "./FileActions";
+import Tooltip from "./Tooltip";
 
 // ... (UserFile interface is the same)
 interface UserFile {
@@ -24,24 +24,20 @@ const Dashboard = () => {
   const [error, setError] = useState("");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [selectedFile, setSelectedFile] = useState<UserFile | null>(null);
-  const [showUpload, setShowUpload] = useState(false); // State to toggle upload zone
-  const [statsKey, setStatsKey] = useState(0);
+  const [showUpload, setShowUpload] = useState(false);
 
   const fetchAllFiles = async () => {
     try {
       // Fetch all files without search params
       const response = await apiClient.get("/search");
       const filesData = Array.isArray(response.data) ? response.data : [];
+      console.log("Fetched files data:", filesData); // Debug log
       setAllFiles(filesData);
       setFiles(filesData); // Initially show all files
     } catch (error) {
       console.error("Failed to fetch files", error);
       setError("Could not load your files.");
     }
-  };
-
-  const refreshStats = () => {
-    setStatsKey((prevKey) => prevKey + 1);
   };
 
   useEffect(() => {
@@ -91,7 +87,6 @@ const Dashboard = () => {
       try {
         await apiClient.delete(`/files/${fileId}`);
         fetchAllFiles();
-        refreshStats();
       } catch (error) {
         console.error("Failed to delete file", error);
         setError("Could not delete the file.");
@@ -133,7 +128,6 @@ const Dashboard = () => {
 
   return (
     <div className="container mx-auto p-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
-      <StatsDisplay key={statsKey} />
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
           Your Files
@@ -186,22 +180,40 @@ const Dashboard = () => {
                 key={file.ID}
                 className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
               >
-                <td
-                  className="p-3 cursor-pointer"
-                  onClick={() => setSelectedFile(file)}
-                >
-                  {file.Filename}
+                <td className="p-3 cursor-pointer max-w-xs">
+                  <Tooltip content={file.Filename}>
+                    <div
+                      className="truncate hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                      onClick={() => setSelectedFile(file)}
+                    >
+                      {file.Filename}
+                    </div>
+                  </Tooltip>
+                </td>
+                <td className="p-3 max-w-xs">
+                  <div className="max-w-full">
+                    <TagManager
+                      tags={file.Tags || []}
+                      onAddTag={(tag) => handleAddTag(file.ID, tag)}
+                      onRemoveTag={(tag) => handleRemoveTag(file.ID, tag)}
+                    />
+                  </div>
                 </td>
                 <td className="p-3">
-                  <TagManager
-                    tags={file.Tags || []}
-                    onAddTag={(tag) => handleAddTag(file.ID, tag)}
-                    onRemoveTag={(tag) => handleRemoveTag(file.ID, tag)}
-                  />
+                  <Tooltip
+                    content={`${formatBytes(file.SizeBytes || 0)} (${
+                      file.SizeBytes
+                    } bytes)`}
+                  >
+                    <span>{formatBytes(file.SizeBytes || 0)}</span>
+                  </Tooltip>
                 </td>
-                <td className="p-3">{formatBytes(file.SizeBytes || 0)}</td>
                 <td className="p-3">
-                  {new Date(file.UploadDate).toLocaleDateString()}
+                  <Tooltip content={new Date(file.UploadDate).toLocaleString()}>
+                    <span>
+                      {new Date(file.UploadDate).toLocaleDateString()}
+                    </span>
+                  </Tooltip>
                 </td>
                 <td className="p-3">
                   <FileActions file={file} onDelete={handleDelete} />
@@ -221,7 +233,7 @@ const Dashboard = () => {
         {files.map((file) => (
           <div
             key={file.ID}
-            className="border dark:border-gray-700 rounded-lg p-2 text-center shadow hover:shadow-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"
+            className="border dark:border-gray-700 rounded-lg p-2 text-center shadow hover:shadow-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 min-w-0 flex flex-col"
           >
             <div
               onClick={() => setSelectedFile(file)}
@@ -229,7 +241,11 @@ const Dashboard = () => {
             >
               <span className="text-4xl">📄</span>
             </div>
-            <p className="font-semibold truncate mt-2">{file.Filename}</p>
+            <Tooltip content={file.Filename}>
+              <p className="font-semibold truncate mt-2 cursor-default min-w-0">
+                {file.Filename}
+              </p>
+            </Tooltip>
             <div className="mt-2">
               <TagManager
                 tags={file.Tags || []}

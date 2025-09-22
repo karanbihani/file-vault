@@ -1,76 +1,84 @@
 import { useState, useCallback } from "react";
 import apiClient from "../api/apiClient";
-
-interface UploadZoneProps {
-  onUploadSuccess: () => void; // A function to call to refresh the file list
-}
+import { AxiosError } from "axios";
 
 interface FileUploadStatus {
-  file: File;
+  name: string;
   status: "pending" | "uploading" | "success" | "error";
   progress: number;
   error?: string;
 }
 
-const UploadZone = ({ onUploadSuccess }: UploadZoneProps) => {
+const UploadZone = ({ onUploadSuccess }: { onUploadSuccess: () => void }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadStatuses, setUploadStatuses] = useState<FileUploadStatus[]>([]);
+  const [statuses, setStatuses] = useState<FileUploadStatus[]>([]);
 
-  const handleUpload = async (files: FileList) => {
+  const uploadFile = async (file: File, index: number) => {
+    const formData = new FormData();
+    formData.append("files", file);
+
+    try {
+      setStatuses((prev) =>
+        prev.map((s, i) => (i === index ? { ...s, status: "uploading" } : s))
+      );
+
+      await apiClient.upload("/files", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+        onUploadProgress: (progressEvent) => {
+          const percent = Math.round(
+            (progressEvent.loaded * 100) / (progressEvent.total || 1)
+          );
+          setStatuses((prev) =>
+            prev.map((s, i) => (i === index ? { ...s, progress: percent } : s))
+          );
+        },
+      });
+
+      setStatuses((prev) =>
+        prev.map((s, i) =>
+          i === index ? { ...s, status: "success", progress: 100 } : s
+        )
+      );
+    } catch (err) {
+      const axiosError = err as AxiosError<{ error: string }>;
+      let errorMessage = "Upload failed - unknown error";
+
+      if (axiosError.response) {
+        errorMessage =
+          axiosError.response.data?.error ||
+          `Server error: ${axiosError.response.status}`;
+      } else if (axiosError.request) {
+        errorMessage = "Network error - please check your connection";
+      } else {
+        errorMessage = axiosError.message || "Upload failed";
+      }
+
+      setStatuses((prev) =>
+        prev.map((s, i) =>
+          i === index ? { ...s, status: "error", error: errorMessage } : s
+        )
+      );
+    }
+  };
+
+  const handleFiles = async (files: FileList) => {
     if (files.length === 0) return;
 
-    // Initialize status for all files
     const initialStatuses = Array.from(files).map((file) => ({
-      file,
-      status: "pending" as const,
+      name: file.name,
+      status: "pending" as "pending",
       progress: 0,
     }));
-    setUploadStatuses(initialStatuses);
+    setStatuses(initialStatuses);
 
-    // Upload files sequentially for better progress tracking
-    for (let i = 0; i < initialStatuses.length; i++) {
-      const formData = new FormData();
-      formData.append("files", initialStatuses[i].file);
-
-      try {
-        // Update status to uploading
-        setUploadStatuses((prev) =>
-          prev.map((s, idx) => (idx === i ? { ...s, status: "uploading" } : s))
-        );
-
-        await apiClient.post("/files", formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-          onUploadProgress: (progressEvent) => {
-            const percentCompleted = Math.round(
-              (progressEvent.loaded * 100) / (progressEvent.total || 1)
-            );
-            setUploadStatuses((prev) =>
-              prev.map((s, idx) =>
-                idx === i ? { ...s, progress: percentCompleted } : s
-              )
-            );
-          },
-        });
-
-        // Update status to success
-        setUploadStatuses((prev) =>
-          prev.map((s, idx) =>
-            idx === i ? { ...s, status: "success", progress: 100 } : s
-          )
-        );
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.error || "Upload failed";
-        setUploadStatuses((prev) =>
-          prev.map((s, idx) =>
-            idx === i ? { ...s, status: "error", error: errorMessage } : s
-          )
-        );
-      }
+    // Upload files sequentially - rate limiter handles delays automatically
+    for (let i = 0; i < files.length; i++) {
+      await uploadFile(files[i], i);
     }
 
-    onUploadSuccess(); // Refresh the file list in the parent component
+    onUploadSuccess();
   };
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -86,105 +94,108 @@ const UploadZone = ({ onUploadSuccess }: UploadZoneProps) => {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    handleUpload(e.dataTransfer.files);
+    handleFiles(e.dataTransfer.files);
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      handleUpload(e.target.files);
+      handleFiles(e.target.files);
     }
   };
 
+  const clearStatuses = () => {
+    setStatuses([]);
+  };
+
   return (
-    <div className="mb-8">
-      <label
-        htmlFor="file-upload"
+    <div className="mb-8 p-4 border rounded-lg dark:border-gray-700">
+      <div
+        className={`p-8 border-2 border-dashed rounded-lg text-center transition-colors ${
+          isDragging
+            ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+            : "border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
+        }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`flex justify-center w-full h-32 px-4 transition bg-white border-2 ${
-          isDragging ? "border-blue-500" : "border-gray-300"
-        } border-dashed rounded-md appearance-none cursor-pointer hover:border-gray-400 focus:outline-none`}
       >
-        <span className="flex items-center space-x-2">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="w-6 h-6 text-gray-600"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-            />
-          </svg>
-          <span className="font-medium text-gray-600">
-            Drop files to attach, or{" "}
-            <span className="text-blue-600 underline">browse</span>
-          </span>
-        </span>
         <input
-          id="file-upload"
           type="file"
           multiple
-          className="hidden"
           onChange={handleFileChange}
+          className="hidden"
+          id="file-input"
         />
-      </label>
+        <label
+          htmlFor="file-input"
+          className="cursor-pointer flex flex-col items-center space-y-2"
+        >
+          <div className="text-4xl">📁</div>
+          <div className="text-lg font-medium text-gray-700 dark:text-gray-300">
+            Click to upload or drag and drop files
+          </div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Supports multiple files
+          </div>
+        </label>
+      </div>
 
-      {/* Upload Status Display */}
-      {uploadStatuses.length > 0 && (
+      {statuses.length > 0 && (
         <div className="mt-4 space-y-3">
-          <h4 className="font-medium text-gray-700 dark:text-gray-300">
-            Upload Progress:
-          </h4>
-          {uploadStatuses.map((status, index) => (
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300">
+              Upload Progress
+            </h3>
+            <button
+              onClick={clearStatuses}
+              className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+              Clear
+            </button>
+          </div>
+          {statuses.map((status, index) => (
             <div
               key={index}
-              className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg"
+              className="border rounded-lg p-3 dark:border-gray-600"
             >
-              <div className="flex justify-between items-center mb-2">
-                <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                  {status.file.name}
+              <div className="flex justify-between items-start mb-2">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+                  {status.name}
                 </p>
                 <span
                   className={`text-xs px-2 py-1 rounded ${
                     status.status === "success"
-                      ? "bg-green-100 text-green-800"
+                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
                       : status.status === "error"
-                      ? "bg-red-100 text-red-800"
+                      ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
                       : status.status === "uploading"
-                      ? "bg-blue-100 text-blue-800"
-                      : "bg-gray-100 text-gray-800"
+                      ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                      : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
                   }`}
                 >
-                  {status.status === "pending" && "Pending"}
-                  {status.status === "uploading" && "Uploading..."}
-                  {status.status === "success" && "Success"}
-                  {status.status === "error" && "Failed"}
+                  {status.status}
                 </span>
               </div>
 
               {status.status === "uploading" && (
-                <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
                   <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
                     style={{ width: `${status.progress}%` }}
-                  ></div>
+                  />
                 </div>
-              )}
-
-              {status.status === "error" && status.error && (
-                <p className="text-red-500 text-xs mt-1">{status.error}</p>
               )}
 
               {status.status === "success" && (
-                <div className="w-full bg-green-200 rounded-full h-2">
-                  <div className="bg-green-600 h-2 rounded-full w-full"></div>
-                </div>
+                <p className="text-green-600 dark:text-green-400 text-sm">
+                  ✅ Upload completed successfully!
+                </p>
+              )}
+
+              {status.status === "error" && (
+                <p className="text-red-600 dark:text-red-400 text-sm">
+                  ❌ {status.error}
+                </p>
               )}
             </div>
           ))}

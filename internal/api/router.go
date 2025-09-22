@@ -3,17 +3,17 @@ package api
 import (
 	"time"
 
-	"github.com/karanbihani/file-vault/internal/auth"    // Adjust path
 	"github.com/gin-contrib/cors"
-	"github.com/karanbihani/file-vault/internal/core/files" // Adjust path
-	"github.com/karanbihani/file-vault/internal/core/shares" // Add this import
-	"github.com/karanbihani/file-vault/internal/core/stats"  // Add this import
-	"github.com/karanbihani/file-vault/internal/core/rbac" 
-	"github.com/karanbihani/file-vault/internal/db" // <-- Add this import for db.Queries
-	"github.com/karanbihani/file-vault/internal/core/admin" // <-- Add this import for admin service
-	"github.com/karanbihani/file-vault/internal/core/search"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/karanbihani/file-vault/internal/auth"       // Adjust path
+	"github.com/karanbihani/file-vault/internal/core/admin" // <-- Add this import for admin service
+	"github.com/karanbihani/file-vault/internal/core/files" // Adjust path
+	"github.com/karanbihani/file-vault/internal/core/rbac"
+	"github.com/karanbihani/file-vault/internal/core/search"
+	"github.com/karanbihani/file-vault/internal/core/shares" // Add this import
+	"github.com/karanbihani/file-vault/internal/core/stats"  // Add this import
+	"github.com/karanbihani/file-vault/internal/db"          // <-- Add this import for db.Queries
 )
 
 func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.Service, authService *auth.Service, sharesService *shares.Service,
@@ -66,6 +66,7 @@ func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.S
 			protected.DELETE("/files/:id/share", PermissionMiddleware(queries, auth.PermissionSharesRevokePublic), sharesHandler.RevokePublicLinks)
 			protected.DELETE("/files/:id/share-to-user", PermissionMiddleware(queries, auth.PermissionSharesRevokeUser), sharesHandler.UnshareWithUser)
 			protected.GET("/files/:id/shares", sharesHandler.GetSharesForFile) 
+			protected.GET("/files/:id/public-share", sharesHandler.GetPublicShareInfo) // New endpoint 
 
 			// Stats Route
 			protected.GET("/stats", PermissionMiddleware(queries, auth.PermissionStatsReadSelf), statsHandler.GetUserDashboardStats)

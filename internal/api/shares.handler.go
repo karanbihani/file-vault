@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/karanbihani/file-vault/internal/core/shares" // Adjust path
 	"github.com/gin-gonic/gin"
+	"github.com/karanbihani/file-vault/internal/core/shares" // Adjust path
 )
 
 type SharesHandler struct {
@@ -144,4 +144,29 @@ func (h *SharesHandler) GetSharesForFile(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, shares)
+}
+
+// GetPublicShareInfo gets public share info for a file
+func (h *SharesHandler) GetPublicShareInfo(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	fileID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+
+	publicShare, err := h.sharesService.GetPublicShareInfo(c.Request.Context(), fileID, userID.(int64))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no public share found"})
+		return
+	}
+
+	// Convert pgtype.Int8 to a regular int64 for JSON serialization
+	downloadCount := int64(0)
+	if publicShare.DownloadCount.Valid {
+		downloadCount = publicShare.DownloadCount.Int64
+	}
+
+	response := map[string]interface{}{
+		"share_token":    publicShare.ShareToken,
+		"download_count": downloadCount,
+	}
+
+	c.JSON(http.StatusOK, response)
 }

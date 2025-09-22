@@ -8,10 +8,10 @@ import (
 	"io"
 	"log"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/karanbihani/file-vault/internal/core/audit"
 	"github.com/karanbihani/file-vault/internal/db"      // Adjust to your module path
 	"github.com/karanbihani/file-vault/internal/storage" // Adjust to your module path
-	"github.com/karanbihani/file-vault/internal/core/audit"
-	"github.com/jackc/pgx/v5"
 )
 
 // Service handles the business logic for file sharing.
@@ -226,4 +226,23 @@ func (s *Service) GetSharesForFile(ctx context.Context, fileID, ownerID int64) (
 		return nil, fmt.Errorf("file not found or access denied")
 	}
 	return s.queries.GetSharesForFile(ctx, fileID)
+}
+
+// GetPublicShareInfo gets public share information for a file
+func (s *Service) GetPublicShareInfo(ctx context.Context, fileID, ownerID int64) (*db.GetPublicShareByFileIDRow, error) {
+	// First, verify ownership
+	_, err := s.queries.GetUserFileForDownload(ctx, db.GetUserFileForDownloadParams{ID: fileID, OwnerID: ownerID})
+	if err != nil {
+		return nil, fmt.Errorf("file not found or access denied")
+	}
+	
+	publicShare, err := s.queries.GetPublicShareByFileID(ctx, fileID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("no public share found")
+		}
+		return nil, err
+	}
+	
+	return &publicShare, nil
 }

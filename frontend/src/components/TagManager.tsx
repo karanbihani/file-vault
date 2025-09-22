@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Tooltip from "./Tooltip";
 
 interface TagManagerProps {
   tags: string[];
@@ -19,21 +20,20 @@ const TagManager = ({ tags, onAddTag, onRemoveTag }: TagManagerProps) => {
 
   return (
     <div>
-      <div className="flex flex-wrap gap-2 mb-2">
+      <div className="flex flex-wrap gap-1 mb-2 max-w-full">
         {tags &&
           tags.map((tag) => (
-            <span
-              key={tag}
-              className="flex items-center bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded dark:bg-blue-900 dark:text-blue-300"
-            >
-              {tag}
-              <button
-                onClick={() => onRemoveTag(tag)}
-                className="ml-2 text-blue-400 hover:text-blue-600 font-bold"
-              >
-                &times;
-              </button>
-            </span>
+            <Tooltip key={tag} content={`Tag: ${tag} (click × to remove)`}>
+              <span className="flex items-center bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded dark:bg-blue-900 dark:text-blue-300 max-w-24 truncate">
+                <span className="truncate">{tag}</span>
+                <button
+                  onClick={() => onRemoveTag(tag)}
+                  className="ml-1 text-blue-400 hover:text-blue-600 font-bold flex-shrink-0"
+                >
+                  &times;
+                </button>
+              </span>
+            </Tooltip>
           ))}
       </div>
       <form onSubmit={handleAdd} className="flex gap-2">

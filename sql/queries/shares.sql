@@ -44,3 +44,10 @@ SELECT u.id, u.email
 FROM file_shares_to_users fstu
 JOIN users u ON fstu.shared_with_user_id = u.id
 WHERE fstu.user_file_id = $1;
+
+-- name: GetPublicShareByFileID :one
+-- Gets public share information for a file
+SELECT share_token, download_count
+FROM shares
+WHERE user_file_id = $1 AND is_public = TRUE
+LIMIT 1;

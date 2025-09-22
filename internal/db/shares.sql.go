@@ -45,6 +45,26 @@ func (q *Queries) DeletePublicShareLinksByFileID(ctx context.Context, userFileID
 	return err
 }
 
+const getPublicShareByFileID = `-- name: GetPublicShareByFileID :one
+SELECT share_token, download_count
+FROM shares
+WHERE user_file_id = $1 AND is_public = TRUE
+LIMIT 1
+`
+
+type GetPublicShareByFileIDRow struct {
+	ShareToken    string
+	DownloadCount pgtype.Int8
+}
+
+// Gets public share information for a file
+func (q *Queries) GetPublicShareByFileID(ctx context.Context, userFileID int64) (GetPublicShareByFileIDRow, error) {
+	row := q.db.QueryRow(ctx, getPublicShareByFileID, userFileID)
+	var i GetPublicShareByFileIDRow
+	err := row.Scan(&i.ShareToken, &i.DownloadCount)
+	return i, err
+}
+
 const getShareByToken = `-- name: GetShareByToken :one
 SELECT s.id, s.download_count, uf.filename, pf.storage_path, pf.size_bytes
 FROM shares s
