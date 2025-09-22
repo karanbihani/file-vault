@@ -2,6 +2,16 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 
+import {
+  FiFolder,
+  FiBarChart,
+  FiSettings,
+  FiMoon,
+  FiSun,
+  FiLogOut,
+  FiExternalLink,
+} from "react-icons/fi";
+
 const Sidebar = () => {
   const { logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -30,7 +40,8 @@ const Sidebar = () => {
             }`
           }
         >
-          📁 My Files
+          <FiFolder className="inline mr-2" />
+          My Files
         </NavLink>
         <NavLink
           to="/stats"
@@ -42,7 +53,8 @@ const Sidebar = () => {
             }`
           }
         >
-          📊 Statistics
+          <FiBarChart className="inline mr-2" />
+          Statistics
         </NavLink>
         <NavLink
           to="/shared-with-me"
@@ -54,7 +66,8 @@ const Sidebar = () => {
             }`
           }
         >
-          🤝 Shared With Me
+          <FiExternalLink className="inline mr-2" />
+          Shared With Me
         </NavLink>
         <NavLink
           to="/admin"
@@ -66,21 +79,27 @@ const Sidebar = () => {
             }`
           }
         >
-          ⚙️ Admin
+          <FiSettings className="inline mr-2" />
+          Admin
         </NavLink>
       </nav>
       <div className="p-4 border-t dark:border-gray-700 flex items-center justify-between">
         <button
           onClick={handleLogout}
-          className="px-4 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+          className="px-4 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition-colors flex items-center"
         >
+          <FiLogOut className="mr-2" />
           Logout
         </button>
         <button
           onClick={toggleTheme}
           className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
         >
-          {theme === "light" ? "🌙" : "☀️"}
+          {theme === "light" ? (
+            <FiMoon className="text-gray-600 dark:text-gray-400" />
+          ) : (
+            <FiSun className="text-gray-600 dark:text-gray-400" />
+          )}
         </button>
       </div>
     </div>

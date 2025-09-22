@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import { FiMoon, FiSun } from "react-icons/fi";
 
 const Navbar = () => {
   const { isAuthenticated, logout } = useAuth();
@@ -45,7 +46,11 @@ const Navbar = () => {
             onClick={toggleTheme}
             className="ml-4 p-2 rounded-full hover:bg-gray-700"
           >
-            {theme === "light" ? "🌙" : "☀️"}
+            {theme === "light" ? (
+              <FiMoon className="text-gray-300" />
+            ) : (
+              <FiSun className="text-gray-300" />
+            )}
           </button>
         </div>
       </div>
