@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/karanbihani/file-vault/internal/auth"    // Adjust path
+	"github.com/gin-contrib/cors"
 	"github.com/karanbihani/file-vault/internal/core/files" // Adjust path
 	"github.com/karanbihani/file-vault/internal/core/shares" // Add this import
 	"github.com/karanbihani/file-vault/internal/core/stats"  // Add this import
@@ -18,6 +19,15 @@ import (
 func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.Service, authService *auth.Service, sharesService *shares.Service,
 	statsService *stats.Service, rbacService *rbac.Service, adminService *admin.Service, searchService *search.Service) *gin.Engine {
 	router := gin.Default()
+
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:3000"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
 	fileHandler := NewFilesHandler(fileService)
 	authHandler := NewAuthHandler(authService)
@@ -55,12 +65,17 @@ func SetupRouter(queries *db.Queries, dbpool *pgxpool.Pool, fileService *files.S
 			protected.POST("/files/:id/share-to-user", PermissionMiddleware(queries, auth.PermissionSharesCreateUser), sharesHandler.ShareWithUser)
 			protected.DELETE("/files/:id/share", PermissionMiddleware(queries, auth.PermissionSharesRevokePublic), sharesHandler.RevokePublicLinks)
 			protected.DELETE("/files/:id/share-to-user", PermissionMiddleware(queries, auth.PermissionSharesRevokeUser), sharesHandler.UnshareWithUser)
+			protected.GET("/files/:id/shares", sharesHandler.GetSharesForFile) 
 
 			// Stats Route
 			protected.GET("/stats", PermissionMiddleware(queries, auth.PermissionStatsReadSelf), statsHandler.GetUserDashboardStats)
 
 			// Search Route
 			protected.GET("/search", searchHandler.Search)
+
+			// Tag Management Route
+			protected.POST("/files/:id/tags", fileHandler.AddTag)
+			protected.DELETE("/files/:id/tags", fileHandler.RemoveTag)
 		}
 
 

@@ -11,6 +11,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addTagToFile = `-- name: AddTagToFile :exec
+UPDATE user_files
+SET tags = array_append(tags, $1)
+WHERE id = $2 AND owner_id = $3
+`
+
+type AddTagToFileParams struct {
+	Tag     interface{}
+	FileID  int64
+	OwnerID int64
+}
+
+// CORRECTED: Use sqlc.arg() to name parameters for clear, generated code.
+func (q *Queries) AddTagToFile(ctx context.Context, arg AddTagToFileParams) error {
+	_, err := q.db.Exec(ctx, addTagToFile, arg.Tag, arg.FileID, arg.OwnerID)
+	return err
+}
+
 const createPhysicalFile = `-- name: CreatePhysicalFile :one
 INSERT INTO physical_files (sha256_hash, size_bytes, storage_path) VALUES ($1, $2, $3) RETURNING id, sha256_hash, size_bytes, storage_path, reference_count, created_at
 `
@@ -304,18 +322,44 @@ func (q *Queries) ListFilesSharedWithUser(ctx context.Context, sharedWithUserID 
 }
 
 const listUserFiles = `-- name: ListUserFiles :many
-SELECT id, owner_id, physical_file_id, filename, mime_type, description, tags, upload_date FROM user_files WHERE owner_id = $1 ORDER BY upload_date DESC
+SELECT
+    uf.id,
+    uf.owner_id,
+    uf.physical_file_id,
+    uf.filename,
+    uf.mime_type,
+    uf.description,
+    uf.tags,
+    uf.upload_date,
+    pf.size_bytes
+FROM user_files uf
+JOIN physical_files pf ON uf.physical_file_id = pf.id
+WHERE uf.owner_id = $1
+ORDER BY uf.upload_date DESC
 `
 
-func (q *Queries) ListUserFiles(ctx context.Context, ownerID int64) ([]UserFile, error) {
+type ListUserFilesRow struct {
+	ID             int64
+	OwnerID        int64
+	PhysicalFileID int64
+	Filename       string
+	MimeType       string
+	Description    pgtype.Text
+	Tags           []string
+	UploadDate     pgtype.Timestamptz
+	SizeBytes      int64
+}
+
+// CORRECTED: Join with physical_files to get the correct size_bytes.
+func (q *Queries) ListUserFiles(ctx context.Context, ownerID int64) ([]ListUserFilesRow, error) {
 	rows, err := q.db.Query(ctx, listUserFiles, ownerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []UserFile
+	var items []ListUserFilesRow
 	for rows.Next() {
-		var i UserFile
+		var i ListUserFilesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.OwnerID,
@@ -325,6 +369,7 @@ func (q *Queries) ListUserFiles(ctx context.Context, ownerID int64) ([]UserFile,
 			&i.Description,
 			&i.Tags,
 			&i.UploadDate,
+			&i.SizeBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -334,4 +379,22 @@ func (q *Queries) ListUserFiles(ctx context.Context, ownerID int64) ([]UserFile,
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeTagFromFile = `-- name: RemoveTagFromFile :exec
+UPDATE user_files
+SET tags = array_remove(tags, $1)
+WHERE id = $2 AND owner_id = $3
+`
+
+type RemoveTagFromFileParams struct {
+	Tag     interface{}
+	FileID  int64
+	OwnerID int64
+}
+
+// CORRECTED: Use sqlc.arg() for named parameters.
+func (q *Queries) RemoveTagFromFile(ctx context.Context, arg RemoveTagFromFileParams) error {
+	_, err := q.db.Exec(ctx, removeTagFromFile, arg.Tag, arg.FileID, arg.OwnerID)
+	return err
 }

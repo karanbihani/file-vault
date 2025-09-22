@@ -12,8 +12,22 @@ UPDATE physical_files SET reference_count = reference_count + 1 WHERE id = $1 RE
 INSERT INTO user_files (owner_id, physical_file_id, filename, mime_type, description, tags) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *;
 
 -- name: ListUserFiles :many
-SELECT * FROM user_files WHERE owner_id = $1 ORDER BY upload_date DESC;
-
+-- name: ListUserFiles :many
+-- CORRECTED: Join with physical_files to get the correct size_bytes.
+SELECT
+    uf.id,
+    uf.owner_id,
+    uf.physical_file_id,
+    uf.filename,
+    uf.mime_type,
+    uf.description,
+    uf.tags,
+    uf.upload_date,
+    pf.size_bytes
+FROM user_files uf
+JOIN physical_files pf ON uf.physical_file_id = pf.id
+WHERE uf.owner_id = $1
+ORDER BY uf.upload_date DESC;
 -- name: GetUserFileForDownload :one
 SELECT uf.*, pf.storage_path FROM user_files uf JOIN physical_files pf ON uf.physical_file_id = pf.id WHERE uf.id = $1 AND uf.owner_id = $2;
 
@@ -64,3 +78,15 @@ WHERE
             WHERE fstu.user_file_id = uf.id AND fstu.shared_with_user_id = sqlc.arg(requesting_user_id)
         )
     );
+
+-- name: AddTagToFile :exec
+-- CORRECTED: Use sqlc.arg() to name parameters for clear, generated code.
+UPDATE user_files
+SET tags = array_append(tags, sqlc.arg(tag))
+WHERE id = sqlc.arg(file_id) AND owner_id = sqlc.arg(owner_id);
+
+-- name: RemoveTagFromFile :exec
+-- CORRECTED: Use sqlc.arg() for named parameters.
+UPDATE user_files
+SET tags = array_remove(tags, sqlc.arg(tag))
+WHERE id = sqlc.arg(file_id) AND owner_id = sqlc.arg(owner_id);

@@ -2,14 +2,14 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
-	"log"
 
+	"github.com/gin-gonic/gin"
 	"github.com/karanbihani/file-vault/internal/core/files" // Adjust path
 	"github.com/karanbihani/file-vault/internal/db"
-	"github.com/gin-gonic/gin"
 )
 
 // ... (FilesHandler struct and NewFilesHandler are the same)
@@ -168,4 +168,55 @@ func (h *FilesHandler) ListSharedWithMe(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, files)
+}
+// AddTag handles POST /files/:id/tags
+func (h *FilesHandler) AddTag(c *gin.Context) {
+   // Get authenticated user ID
+   userID, exists := c.Get("userID")
+   if !exists {
+	   c.JSON(http.StatusUnauthorized, gin.H{"error": "user ID not found in context"})
+	   return
+   }
+   // Parse file ID from URL
+   fileID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+   if err != nil {
+	   c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file ID"})
+	   return
+   }
+   // Bind tag from request body
+   var body struct { Tag string `json:"tag"` }
+   if err := c.ShouldBindJSON(&body); err != nil {
+	   c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+	   return
+   }
+   // Call service
+   if err := h.fileService.AddTag(c.Request.Context(), fileID, userID.(int64), body.Tag); err != nil {
+	   c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	   return
+   }
+   c.JSON(http.StatusOK, gin.H{"message": "tag added successfully"})
+}
+
+// RemoveTag handles DELETE /files/:id/tags
+func (h *FilesHandler) RemoveTag(c *gin.Context) {
+   userID, exists := c.Get("userID")
+   if !exists {
+	   c.JSON(http.StatusUnauthorized, gin.H{"error": "user ID not found in context"})
+	   return
+   }
+   fileID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+   if err != nil {
+	   c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file ID"})
+	   return
+   }
+   var body struct { Tag string `json:"tag"` }
+   if err := c.ShouldBindJSON(&body); err != nil {
+	   c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+	   return
+   }
+   if err := h.fileService.RemoveTag(c.Request.Context(), fileID, userID.(int64), body.Tag); err != nil {
+	   c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	   return
+   }
+   c.JSON(http.StatusOK, gin.H{"message": "tag removed successfully"})
 }

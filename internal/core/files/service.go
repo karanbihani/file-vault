@@ -66,7 +66,9 @@ func (s *Service) UploadFile(ctx context.Context, params UploadFileParams) (*db.
 	}
 
 	if user.StorageUsedBytes+size > user.StorageQuotaBytes {
-		return nil, ErrQuotaExceeded
+		log.Printf("QUOTA EXCEEDED for user %d. Used: %d, File: %d, Quota: %d", 
+			params.OwnerID, user.StorageUsedBytes, size, user.StorageQuotaBytes)
+		return nil, ErrQuotaExceeded // Use the existing error type
 	}
 
 	mtype := mimetype.Detect(buf.Bytes())
@@ -158,7 +160,7 @@ func (s *Service) UploadFile(ctx context.Context, params UploadFileParams) (*db.
 	return &newUserFile, nil
 }
 
-func (s *Service) ListFiles(ctx context.Context, ownerID int64) ([]db.UserFile, error) {
+func (s *Service) ListFiles(ctx context.Context, ownerID int64) ([]db.ListUserFilesRow, error) {
 	return s.queries.ListUserFiles(ctx, ownerID)
 }
 
@@ -281,4 +283,24 @@ func (s *Service) DeleteFile(ctx context.Context, fileID, ownerID int64) error {
 	})
 	
 	return tx.Commit(ctx)
+}
+
+func (s *Service) AddTag(ctx context.Context, fileID, ownerID int64, tag string) error {
+	// --- THIS IS THE FIX ---
+	// Use the new, correctly named fields from the generated struct.
+	return s.queries.AddTagToFile(ctx, db.AddTagToFileParams{
+		FileID:  fileID,
+		Tag:     tag,
+		OwnerID: ownerID,
+	})
+}
+
+func (s *Service) RemoveTag(ctx context.Context, fileID, ownerID int64, tag string) error {
+	// --- THIS IS THE FIX ---
+	// Use the new, correctly named fields.
+	return s.queries.RemoveTagFromFile(ctx, db.RemoveTagFromFileParams{
+		FileID:  fileID,
+		Tag:     tag,
+		OwnerID: ownerID,
+	})
 }

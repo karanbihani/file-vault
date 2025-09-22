@@ -218,3 +218,12 @@ func (s *Service) UnshareFileWithUser(ctx context.Context, fileID, ownerID int64
 
 	return nil
 }
+
+func (s *Service) GetSharesForFile(ctx context.Context, fileID, ownerID int64) ([]db.GetSharesForFileRow, error) {
+	// First, verify ownership.
+	_, err := s.queries.GetUserFileForDownload(ctx, db.GetUserFileForDownloadParams{ID: fileID, OwnerID: ownerID})
+	if err != nil {
+		return nil, fmt.Errorf("file not found or access denied")
+	}
+	return s.queries.GetSharesForFile(ctx, fileID)
+}

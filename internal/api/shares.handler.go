@@ -133,3 +133,15 @@ func (h *SharesHandler) UnshareWithUser(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "share access has been revoked for the specified user"})
 }
+
+func (h *SharesHandler) GetSharesForFile(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	fileID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+
+	shares, err := h.sharesService.GetSharesForFile(c.Request.Context(), fileID, userID.(int64))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, shares)
+}

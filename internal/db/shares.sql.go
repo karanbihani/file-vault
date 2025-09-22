@@ -75,6 +75,39 @@ func (q *Queries) GetShareByToken(ctx context.Context, shareToken string) (GetSh
 	return i, err
 }
 
+const getSharesForFile = `-- name: GetSharesForFile :many
+SELECT u.id, u.email
+FROM file_shares_to_users fstu
+JOIN users u ON fstu.shared_with_user_id = u.id
+WHERE fstu.user_file_id = $1
+`
+
+type GetSharesForFileRow struct {
+	ID    int64
+	Email string
+}
+
+// Retrieves all user shares for a specific file.
+func (q *Queries) GetSharesForFile(ctx context.Context, userFileID int64) ([]GetSharesForFileRow, error) {
+	rows, err := q.db.Query(ctx, getSharesForFile, userFileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSharesForFileRow
+	for rows.Next() {
+		var i GetSharesForFileRow
+		if err := rows.Scan(&i.ID, &i.Email); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const incrementShareDownloadCount = `-- name: IncrementShareDownloadCount :exec
 UPDATE shares SET download_count = download_count + 1 WHERE id = $1
 `

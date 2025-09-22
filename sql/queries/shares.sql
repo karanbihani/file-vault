@@ -37,3 +37,10 @@ WHERE user_file_id = $1 AND shared_with_user_id = $2;
 -- Removes ALL public share links associated with a specific file.
 DELETE FROM shares
 WHERE user_file_id = $1;
+
+-- name: GetSharesForFile :many
+-- Retrieves all user shares for a specific file.
+SELECT u.id, u.email
+FROM file_shares_to_users fstu
+JOIN users u ON fstu.shared_with_user_id = u.id
+WHERE fstu.user_file_id = $1;
